@@ -29,3 +29,17 @@ export function positionAt(frames, id, t) {
 export function eventsUpTo(events, t) {
   return events.filter((e) => e.tick < t);
 }
+
+// A side's contacts at fractional tick t: Map enemyId -> { level, pos }.
+// Starts from the contacts before the turn and applies this side's
+// spotted / lost / contact_expired events that have happened by t.
+export function contactsAt(contactsBefore, events, side, t) {
+  const known = new Map(Object.entries(contactsBefore ?? {}).map(([id, c]) => [Number(id), { level: c.level, pos: c.pos }]));
+  for (const e of events) {
+    if (e.side !== side || e.tick >= t) continue;
+    if (e.type === 'spotted') known.set(e.id, { level: 'spotted', pos: e.pos });
+    else if (e.type === 'lost') known.set(e.id, { level: 'suspected', pos: e.pos });
+    else if (e.type === 'contact_expired') known.delete(e.id);
+  }
+  return known;
+}

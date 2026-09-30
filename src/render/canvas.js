@@ -26,6 +26,8 @@ export const COLORS = {
   team: { ALPHA: '#f0a030', BRAVO: '#7fd06a', CHARLIE: '#c07fe0', DELTA: '#e0e060' },
   counterText: '#ffffff',
   hover: 'rgba(255, 255, 255, 0.7)',
+  losClear: 'rgba(120, 230, 120, 0.9)',
+  losBlocked: 'rgba(240, 90, 70, 0.9)',
   select: '#ffffff',
 };
 
@@ -180,6 +182,49 @@ export function drawWaypoints(ctx, cam, points) {
   }
 }
 
+// Suspected contacts: dashed diamond with a question mark at the last known position.
+export function drawSuspected(ctx, cam, points) {
+  const size = Math.max(8, cam.scale * 0.9);
+  for (const p of points) {
+    const c = toScreen(cam, p.x + 0.5, p.y + 0.5);
+    ctx.strokeStyle = COLORS.opfor;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 2]);
+    ctx.beginPath();
+    ctx.moveTo(c.x, c.y - size * 0.55);
+    ctx.lineTo(c.x + size * 0.55, c.y);
+    ctx.lineTo(c.x, c.y + size * 0.55);
+    ctx.lineTo(c.x - size * 0.55, c.y);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = COLORS.opfor;
+    ctx.font = `bold ${Math.max(8, Math.round(size * 0.6))}px ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', c.x, c.y + 1);
+  }
+}
+
+// LOS check lines: [{ from, to, clear, blockedAt }]. Green to the target
+// when clear; red up to the blocking tile when not.
+export function drawSightLines(ctx, cam, lines) {
+  for (const l of lines) {
+    const a = toScreen(cam, l.from.x + 0.5, l.from.y + 0.5);
+    const end = l.clear ? l.to : l.blockedAt ?? l.to;
+    const b = toScreen(cam, end.x + 0.5, end.y + 0.5);
+    ctx.strokeStyle = l.clear ? COLORS.losClear : COLORS.losBlocked;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    if (!l.clear && l.blockedAt) {
+      ctx.strokeRect(b.x - cam.scale / 2, b.y - cam.scale / 2, cam.scale, cam.scale);
+    }
+  }
+}
+
 export function drawHover(ctx, cam, tile) {
   if (!tile) return;
   const s = toScreen(cam, tile.x, tile.y);
@@ -190,11 +235,13 @@ export function drawHover(ctx, cam, tile) {
 
 // NATO-style counters. BLUFOR: blue rectangle. OPFOR: red diamond.
 // Team color stripe on top. Prone soldiers are drawn flatter.
-// soldiers: [{ soldier, pos: {x, y} (fractional tile), selected }]
+// soldiers: [{ soldier, pos: {x, y} (fractional tile), selected, ghost }]
+// ghost: drawn faint (debug view of soldiers the player has not spotted).
 export function drawSoldiers(ctx, cam, soldiers) {
   const size = Math.max(8, cam.scale * 0.9);
-  for (const { soldier, pos, selected } of soldiers) {
+  for (const { soldier, pos, selected, ghost } of soldiers) {
     if (soldier.status === 'dead') continue;
+    ctx.globalAlpha = ghost ? 0.35 : 1;
     const c = toScreen(cam, pos.x + 0.5, pos.y + 0.5);
     const w = size;
     const h = soldier.stance === 'prone' ? size * 0.5 : size * 0.7;
@@ -225,4 +272,5 @@ export function drawSoldiers(ctx, cam, soldiers) {
       ctx.fillText(soldier.role, c.x, c.y + (soldier.side === 'OPFOR' ? 0 : h * 0.1));
     }
   }
+  ctx.globalAlpha = 1;
 }

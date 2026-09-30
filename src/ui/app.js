@@ -1,15 +1,17 @@
 // Browser UI: input, order planning, preview, and turn playback.
 // The sim is only touched through planOrders (preview) and resolveTurn (ENGAGE).
 
+import { lineOfSight } from '../sim/los.js';
 import { inBounds, isPassable, tileAt } from '../sim/map.js';
 import { planOrders, SPEEDS } from '../sim/orders.js';
 import { teamsOf } from '../sim/state.js';
 import { resolveTurn } from '../sim/step.js';
 import { createCamera, fitCamera, panBy, toTile, zoomAt } from '../render/camera.js';
 import {
-  buildTerrainLayer, drawHover, drawPaths, drawSoldiers, drawTerrain, drawWaypoints, fitCanvas, teamColor,
+  buildTerrainLayer, drawHover, drawPaths, drawSightLines, drawSoldiers, drawSuspected, drawTerrain, drawWaypoints,
+  fitCanvas, teamColor,
 } from '../render/canvas.js';
-import { buildFrames, eventsUpTo, positionAt } from './playback.js';
+import { buildFrames, contactsAt, eventsUpTo, positionAt } from './playback.js';
 import { previewLines } from './preview.js';
 
 const PLAYER_SIDE = 'BLUFOR';
@@ -33,6 +35,8 @@ export function startApp(initialState) {
     playbackSpeed: 1,
     hover: null,
     message: '',
+    losTool: false, // draw sight lines from the selected team to the hovered tile
+    reveal: false,  // debug: show OPFOR the player has not spotted, faintly
   };
 
   const canvas = $('board');
@@ -148,6 +152,12 @@ export function startApp(initialState) {
     replan();
   }
 
+  function toggleLosTool() {
+    app.losTool = !app.losTool;
+    renderPanel();
+    renderHover();
+  }
+
   function replayLast() {
     if (app.playback || app.history.length === 0) return;
     startPlayback(app.history[app.history.length - 1]);
@@ -159,9 +169,17 @@ export function startApp(initialState) {
     return `${s.team} ${s.role}`;
   }
 
+  // Only what the player's side knows goes into the log.
   function formatEvent(e, byId, tickSec) {
     const t = `${(e.tick * tickSec).toFixed(1)} s`;
     const s = byId.get(e.id);
+    if (['spotted', 'lost', 'contact_expired'].includes(e.type)) {
+      if (e.side !== PLAYER_SIDE) return null;
+      if (e.type === 'spotted') return `${t}  CONTACT: enemy at ${e.pos.x},${e.pos.y}, spotted by ${soldierName(byId.get(e.by))}.`;
+      if (e.type === 'lost') return `${t}  Lost sight of enemy. Last seen at ${e.pos.x},${e.pos.y}.`;
+      return `${t}  Contact at ${e.pos.x},${e.pos.y} is stale, dropped.`;
+    }
+    if ((e.side ?? s?.side) !== PLAYER_SIDE) return null;
     switch (e.type) {
       case 'order':
         return `${t}  ${e.team}: ${e.order.type}${e.order.type === 'move' ? ` (${e.order.speed}) to ${e.order.dest.x},${e.order.dest.y}${e.order.via?.length ? ` via ${e.order.via.map((p) => `${p.x},${p.y}`).join(', ')}` : ''}` : ''}.`;
@@ -181,9 +199,14 @@ export function startApp(initialState) {
   function renderPanel() {
     const { state } = app;
     const busy = Boolean(app.playback);
+    const contacts = Object.values(state.contacts[PLAYER_SIDE] ?? {});
+    const spotted = contacts.filter((c) => c.level === 'spotted').length;
+    const suspected = contacts.length - spotted;
+    const contactText = contacts.length ? `Contacts: ${spotted} spotted, ${suspected} suspected.` : 'No contact.';
     $('turn').textContent = busy
       ? `Turn ${app.playback.entry.before.turn + 1}: playing`
-      : `Turn ${state.turn + 1}: planning`;
+      : `Turn ${state.turn + 1}: planning. ${contactText}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
+    $('lostool').classList.toggle('selected', app.losTool);
 
     const lines = previewLines(state, PLAYER_SIDE, app.plans);
     const teams = $('teams');
@@ -251,12 +274,69 @@ export function startApp(initialState) {
     else if (tile.height === 2) parts.push('wall');
     else if (tile.height === 1) parts.push('low wall');
     parts.push(`cover ${tile.cover}`, `concealment ${tile.concealment}`);
-    const s = app.state.soldiers.find((x) => x.pos.x === t.x && x.pos.y === t.y && x.status !== 'dead');
-    if (s && !app.playback) parts.push(`| ${s.side} ${soldierName(s)}, ${s.stance}, ${s.status}`);
-    $('status').textContent = parts.join(', ').replace(', |', ' |');
+    let text = parts.join(', ');
+    if (!app.playback) {
+      const known = app.state.contacts[PLAYER_SIDE] ?? {};
+      const s = app.state.soldiers.find((x) => x.pos.x === t.x && x.pos.y === t.y && x.status !== 'dead');
+      if (s && (s.side === PLAYER_SIDE || known[s.id]?.level === 'spotted' || app.reveal)) {
+        text += ` | ${s.side} ${soldierName(s)}, ${s.stance}, ${s.status}`;
+      }
+      const suspected = Object.values(known).find((c) => c.level === 'suspected' && c.pos.x === t.x && c.pos.y === t.y);
+      if (suspected) text += ' | suspected enemy (last known position)';
+      if (app.losTool) text += ` | ${sightSummary(t)}`;
+    }
+    $('status').textContent = text;
+  }
+
+  // ---- line of sight tool ----
+
+  // Target stance for the LOS check: the soldier on that tile if the player
+  // can see one, else crouched (the default stance).
+  function sightTarget(t) {
+    const known = app.state.contacts[PLAYER_SIDE] ?? {};
+    const s = app.state.soldiers.find((x) => x.pos.x === t.x && x.pos.y === t.y && x.status !== 'dead'
+      && (x.side === PLAYER_SIDE || known[x.id]?.level === 'spotted' || app.reveal));
+    return { pos: t, stance: s?.stance ?? app.state.balance.soldier.startStance };
+  }
+
+  function sightChecks(t) {
+    const { map, balance, soldiers } = app.state;
+    const target = sightTarget(t);
+    return soldiers
+      .filter((s) => s.side === PLAYER_SIDE && s.team === app.selectedTeam && s.status !== 'dead')
+      .filter((s) => s.pos.x !== t.x || s.pos.y !== t.y)
+      .map((s) => ({ soldier: s, target, los: lineOfSight(map, balance, s, target) }));
+  }
+
+  function sightSummary(t) {
+    if (!inBounds(app.state.map, t.x, t.y)) return '';
+    const checks = sightChecks(t);
+    const stance = checks[0]?.target.stance;
+    return `LOS to a ${stance} target: ` + checks.map(({ soldier, los }) => {
+      if (!los.clear) return `${soldier.role} no (${los.reason})`;
+      const extra = [los.partial ? 'partly hidden' : null, los.concealment > 0 ? `concealment ${los.concealment.toFixed(2)}` : null]
+        .filter(Boolean).join(', ');
+      return `${soldier.role} yes${extra ? ` (${extra})` : ''}`;
+    }).join('; ');
   }
 
   // ---- drawing ----
+
+  // Enemy counters and markers the player is allowed to see.
+  function enemyView(known, positionOf) {
+    const counters = [];
+    const suspected = [];
+    for (const s of app.state.soldiers) {
+      if (s.side === PLAYER_SIDE) continue;
+      const c = known.get(s.id);
+      if (c?.level === 'spotted') counters.push({ soldier: s, pos: positionOf(s) });
+      else {
+        if (c?.level === 'suspected') suspected.push(c.pos);
+        if (app.reveal) counters.push({ soldier: s, pos: positionOf(s), ghost: true });
+      }
+    }
+    return { counters, suspected };
+  }
 
   function frame(now) {
     const { ctx, width: w, height: h } = fitCanvas(canvas);
@@ -270,7 +350,14 @@ export function startApp(initialState) {
       pb.last = now;
       const ticks = pb.entry.before.ticksPerTurn;
       const t = Math.min(pb.elapsedTicks, ticks);
-      soldiers = pb.entry.before.soldiers.map((s) => ({ soldier: s, pos: positionAt(pb.frames, s.id, t) }));
+      const known = contactsAt(pb.entry.before.contacts[PLAYER_SIDE], pb.entry.events, PLAYER_SIDE, t);
+      const view = enemyView(known, (s) => positionAt(pb.frames, s.id, t));
+      drawSuspected(ctx, cam, view.suspected);
+      soldiers = [
+        ...pb.entry.before.soldiers.filter((s) => s.side === PLAYER_SIDE)
+          .map((s) => ({ soldier: s, pos: positionAt(pb.frames, s.id, t) })),
+        ...view.counters,
+      ];
       renderLog();
       if (pb.elapsedTicks >= ticks) endPlayback();
     } else {
@@ -297,9 +384,20 @@ export function startApp(initialState) {
         }
       }
       drawWaypoints(ctx, cam, waypoints);
-      soldiers = state.soldiers.map((s) => ({
-        soldier: s, pos: s.pos, selected: s.side === PLAYER_SIDE && s.team === app.selectedTeam,
-      }));
+      const known = new Map(Object.entries(state.contacts[PLAYER_SIDE] ?? {}).map(([id, c]) => [Number(id), c]));
+      const view = enemyView(known, (s) => s.pos);
+      drawSuspected(ctx, cam, view.suspected);
+      if (app.losTool && app.hover && inBounds(state.map, app.hover.x, app.hover.y)) {
+        drawSightLines(ctx, cam, sightChecks(app.hover).map(({ soldier, los }) => ({
+          from: soldier.pos, to: app.hover, clear: los.clear, blockedAt: los.blockedAt,
+        })));
+      }
+      soldiers = [
+        ...state.soldiers.filter((s) => s.side === PLAYER_SIDE).map((s) => ({
+          soldier: s, pos: s.pos, selected: s.team === app.selectedTeam,
+        })),
+        ...view.counters,
+      ];
     }
     drawSoldiers(ctx, cam, soldiers);
     drawHover(ctx, cam, app.hover);
@@ -375,6 +473,11 @@ export function startApp(initialState) {
     else if (k === 'backspace') undoPoint();
     else if (k === 'delete') clearOrder();
     else if (k === 'p') replayLast();
+    else if (k === 'l') toggleLosTool();
+    else if (k === 'v') {
+      app.reveal = !app.reveal;
+      renderPanel();
+    }
   });
 
   for (const speed of SPEEDS) $(`speed-${speed}`).onclick = () => setSpeed(speed);
@@ -382,6 +485,7 @@ export function startApp(initialState) {
   $('clear').onclick = clearOrder;
   $('engage').onclick = engage;
   $('replay').onclick = replayLast;
+  $('lostool').onclick = toggleLosTool;
   $('pbspeed').onclick = () => {
     const i = PLAYBACK_SPEEDS.indexOf(app.playbackSpeed);
     app.playbackSpeed = PLAYBACK_SPEEDS[(i + 1) % PLAYBACK_SPEEDS.length];

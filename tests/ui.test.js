@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { planOrders } from '../src/sim/orders.js';
 import { resolveTurn } from '../src/sim/step.js';
-import { buildFrames, positionAt } from '../src/ui/playback.js';
+import { buildFrames, contactsAt, positionAt } from '../src/ui/playback.js';
 import { previewLines, remainingMoveSec } from '../src/ui/preview.js';
 import { grass, makeState, trainingState } from './helpers.js';
 
@@ -62,4 +62,20 @@ test('remaining time on a move in progress counts down', () => {
   assert.ok(Math.abs(left - (plan.soldiers[0].etaSec - s.balance.turn.durationSec)) < 1e-6);
   const [line] = previewLines(state, 'BLUFOR', []);
   assert.match(line.text, /continuing walk to 40,0/);
+});
+
+test('playback contact timeline ends where the sim ends', () => {
+  const rows = ['..............', '...........#..', '..............'];
+  const units = [
+    { side: 'BLUFOR', team: 'ALPHA', role: 'TL', pos: [0, 1] },
+    { side: 'OPFOR', team: 'ALPHA', role: 'TL', pos: [2, 1] },
+  ];
+  const s0 = makeState(rows, units);
+  const t1 = resolveTurn(s0, []);
+  assert.equal(contactsAt(s0.contacts.BLUFOR, t1.events, 'BLUFOR', 0).size, 0, 'nothing known before the first tick');
+  assert.equal(contactsAt(s0.contacts.BLUFOR, t1.events, 'BLUFOR', s0.ticksPerTurn).get(1).level, 'spotted');
+  const t2 = resolveTurn(t1.state, [move('OPFOR', 'ALPHA', 13, 1, 'run')]);
+  const end = contactsAt(t1.state.contacts.BLUFOR, t2.events, 'BLUFOR', s0.ticksPerTurn);
+  assert.deepEqual(end.get(1), { level: t2.state.contacts.BLUFOR[1].level, pos: t2.state.contacts.BLUFOR[1].pos });
+  assert.equal(end.get(1).level, 'suspected');
 });
