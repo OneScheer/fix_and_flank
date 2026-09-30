@@ -186,6 +186,8 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 
 ## 9. Open questions (ask the user before assuming)
 
+**Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; 2 m tiles, 80 x 80; anonymous soldiers by role; hand-built maps only; distribution decided later.
+
 1. Primary purpose: standalone game, or drill-rehearsal tool for the Reforger community, or both? (Affects how much the game explains itself.)
 2. Desktop only, or phone-first like Contrail Tactics?
 3. Tile scale and map size: is 2 m tiles and 80 x 80 right, or should maps be bigger?
