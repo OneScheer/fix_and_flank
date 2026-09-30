@@ -7,5 +7,32 @@
     "tileMeters": 2,
     "defaultWidth": 80,
     "defaultHeight": 80
+  },
+  "soldier": {
+    "hp": 100,
+    "startStance": "crouch"
+  },
+  "movement": {
+    "speedMps": {
+      "walk": 1.5,
+      "run": 4.0,
+      "crawl": 0.4
+    },
+    "stanceForSpeed": {
+      "walk": "crouch",
+      "run": "stand",
+      "crawl": "prone"
+    },
+    "terrainCost": {
+      "open": 1,
+      "road": 1,
+      "grass": 1,
+      "scrub": 1.4,
+      "forest": 1.8,
+      "rubble": 2,
+      "water": null
+    },
+    "lowObstacleCost": 2,
+    "formationSearchRadius": 4
   }
 }
