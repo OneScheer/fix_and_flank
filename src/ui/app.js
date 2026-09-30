@@ -7,7 +7,7 @@ import { teamsOf } from '../sim/state.js';
 import { resolveTurn } from '../sim/step.js';
 import { createCamera, fitCamera, panBy, toTile, zoomAt } from '../render/camera.js';
 import {
-  buildTerrainLayer, drawHover, drawPaths, drawSoldiers, drawTerrain, fitCanvas, teamColor,
+  buildTerrainLayer, drawHover, drawPaths, drawSoldiers, drawTerrain, drawWaypoints, fitCanvas, teamColor,
 } from '../render/canvas.js';
 import { buildFrames, eventsUpTo, positionAt } from './playback.js';
 import { previewLines } from './preview.js';
@@ -51,18 +51,42 @@ export function startApp(initialState) {
 
   // ---- orders ----
 
-  function orderMove(tile) {
+  // Plain click: new move order. Shift+click: extend the current move order,
+  // the old destination becomes a waypoint.
+  function orderMove(tile, addWaypoint) {
     const { map } = app.state;
     if (!inBounds(map, tile.x, tile.y)) return;
     if (!isPassable(tileAt(map, tile.x, tile.y))) {
       setMessage(`${tile.x},${tile.y} is impassable.`);
       return;
     }
+    const current = app.pending.get(app.selectedTeam);
+    let via = [];
+    if (addWaypoint && current?.type === 'move') {
+      via = [...(current.via ?? []), current.dest];
+      const max = app.state.balance.movement.maxWaypoints;
+      if (via.length > max) {
+        setMessage(`At most ${max} waypoints per order.`);
+        return;
+      }
+    }
     app.pending.set(app.selectedTeam, {
-      type: 'move', side: PLAYER_SIDE, team: app.selectedTeam, dest: { x: tile.x, y: tile.y }, speed: app.speed,
+      type: 'move', side: PLAYER_SIDE, team: app.selectedTeam, dest: { x: tile.x, y: tile.y }, speed: app.speed, via,
     });
     app.message = '';
     replan();
+  }
+
+  // Remove the last point of the move order; clears the order when none are left.
+  function undoPoint() {
+    const order = app.pending.get(app.selectedTeam);
+    if (order?.type === 'move' && order.via?.length) {
+      const via = order.via.slice(0, -1);
+      app.pending.set(app.selectedTeam, { ...order, dest: order.via[order.via.length - 1], via });
+      replan();
+    } else {
+      clearOrder();
+    }
   }
 
   function orderHold() {
@@ -140,7 +164,7 @@ export function startApp(initialState) {
     const s = byId.get(e.id);
     switch (e.type) {
       case 'order':
-        return `${t}  ${e.team}: ${e.order.type}${e.order.type === 'move' ? ` (${e.order.speed}) to ${e.order.dest.x},${e.order.dest.y}` : ''}.`;
+        return `${t}  ${e.team}: ${e.order.type}${e.order.type === 'move' ? ` (${e.order.speed}) to ${e.order.dest.x},${e.order.dest.y}${e.order.via?.length ? ` via ${e.order.via.map((p) => `${p.x},${p.y}`).join(', ')}` : ''}` : ''}.`;
       case 'order_rejected':
         return `${t}  ${e.team}: order rejected, ${e.reason}.`;
       case 'order_failed':
@@ -218,7 +242,7 @@ export function startApp(initialState) {
     const t = app.hover;
     const { map } = app.state;
     if (!t || !inBounds(map, t.x, t.y)) {
-      $('status').textContent = 'Left click: move selected team. Drag or right drag: pan. Wheel: zoom.';
+      $('status').textContent = 'Click: move selected team. Shift+click: add waypoint. Drag: pan. Wheel: zoom.';
       return;
     }
     const tile = tileAt(map, t.x, t.y);
@@ -266,6 +290,13 @@ export function startApp(initialState) {
         paths.push({ from: s.pos, path: s.move.path.slice(s.move.i), color: teamColor(s.team), dashed: true });
       }
       drawPaths(ctx, cam, paths);
+      const waypoints = [];
+      for (const plan of app.plans) {
+        if (plan.ok && plan.order.type === 'move') {
+          for (const p of plan.order.via ?? []) waypoints.push({ ...p, color: teamColor(plan.order.team) });
+        }
+      }
+      drawWaypoints(ctx, cam, waypoints);
       soldiers = state.soldiers.map((s) => ({
         soldier: s, pos: s.pos, selected: s.side === PLAYER_SIDE && s.team === app.selectedTeam,
       }));
@@ -306,8 +337,8 @@ export function startApp(initialState) {
     const own = app.state.soldiers.find(
       (s) => s.side === PLAYER_SIDE && s.status !== 'dead' && s.pos.x === tile.x && s.pos.y === tile.y,
     );
-    if (own) selectTeam(own.team);
-    else orderMove(tile);
+    if (own && !e.shiftKey) selectTeam(own.team);
+    else orderMove(tile, e.shiftKey);
   });
   canvas.addEventListener('pointerleave', () => {
     app.hover = null;
@@ -341,7 +372,8 @@ export function startApp(initialState) {
     else if (k === 'r') setSpeed('run');
     else if (k === 'c') setSpeed('crawl');
     else if (k === 'h') orderHold();
-    else if (k === 'backspace' || k === 'delete') clearOrder();
+    else if (k === 'backspace') undoPoint();
+    else if (k === 'delete') clearOrder();
     else if (k === 'p') replayLast();
   });
 

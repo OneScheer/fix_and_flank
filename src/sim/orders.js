@@ -2,13 +2,15 @@
 // executed per soldier. planOrders is used both by the sim and by the UI
 // preview, so the preview always shows what the sim will do.
 //
-// { type: 'move', side, team, dest: {x, y}, speed: 'walk' | 'run' | 'crawl' }
+// { type: 'move', side, team, dest: {x, y}, speed: 'walk' | 'run' | 'crawl', via?: [{x, y}] }
 // { type: 'hold', side, team }
 //
-// Move orders persist across turns until the team arrives or gets a new order.
+// `via` is an optional list of waypoints the team leader passes through, in
+// order, before the destination. Move orders persist across turns until the
+// team arrives or gets a new order.
 
 import { inBounds, isPassable, stepCost, tileAt } from './map.js';
-import { findPath } from './path.js';
+import { findRoute } from './path.js';
 import { teamMembers } from './state.js';
 
 export const ORDER_TYPES = ['move', 'hold'];
@@ -23,9 +25,15 @@ export function validateOrder(state, order) {
   }
   if (order.type === 'move') {
     if (!SPEEDS.includes(order.speed)) return { ok: false, reason: `unknown speed '${order.speed}'` };
-    const { x, y } = order.dest ?? {};
-    if (!inBounds(state.map, x, y)) return { ok: false, reason: 'destination is off the map' };
-    if (!isPassable(tileAt(state.map, x, y))) return { ok: false, reason: 'destination is impassable' };
+    const via = order.via ?? [];
+    if (!Array.isArray(via)) return { ok: false, reason: 'waypoints must be a list' };
+    const max = state.balance.movement.maxWaypoints;
+    if (via.length > max) return { ok: false, reason: `too many waypoints (${via.length}, max ${max})` };
+    for (const [i, p] of [...via, order.dest].entries()) {
+      const what = i === via.length ? 'destination' : `waypoint ${i + 1}`;
+      if (!inBounds(state.map, p?.x, p?.y)) return { ok: false, reason: `${what} is off the map` };
+      if (!isPassable(tileAt(state.map, p.x, p.y))) return { ok: false, reason: `${what} is impassable` };
+    }
   }
   return { ok: true };
 }
@@ -131,7 +139,13 @@ export function planOrders(state, orders) {
       const inFormation = s !== anchor && anchorPath && dest.x === target.x && dest.y === target.y
         ? followPath(map, movement, s.pos, anchorPath, offset)
         : null;
-      const found = inFormation ?? findPath(map, movement, s.pos, dest);
+      // Leader routes through the waypoints. A follower whose shifted route is
+      // blocked passes through its own offset of each waypoint where passable.
+      const via = (order.via ?? []).map((p) => {
+        const shifted = { x: p.x + offset.x, y: p.y + offset.y };
+        return inBounds(map, shifted.x, shifted.y) && isPassable(tileAt(map, shifted.x, shifted.y)) ? shifted : p;
+      });
+      const found = inFormation ?? findRoute(map, movement, s.pos, [...via, dest]);
       if (s === anchor) anchorPath = found?.path ?? null;
       if (!found) {
         result.soldiers.push({ id: s.id, dest, path: null, reason: 'no route to the destination' });

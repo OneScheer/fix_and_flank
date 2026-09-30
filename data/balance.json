@@ -33,6 +33,7 @@
       "water": null
     },
     "lowObstacleCost": 2,
-    "formationSearchRadius": 4
+    "formationSearchRadius": 4,
+    "maxWaypoints": 8
   }
 }

@@ -10,6 +10,11 @@ function roundSec(sec) {
   return sec < 10 ? Math.round(sec * 2) / 2 : Math.round(sec);
 }
 
+function viaText(via) {
+  if (!via?.length) return '';
+  return via.length === 1 ? ' via 1 waypoint' : ` via ${via.length} waypoints`;
+}
+
 function arrival(sec, durationSec) {
   const turns = Math.max(1, Math.ceil(sec / durationSec));
   return turns === 1 ? 'arrives this turn' : `arrives in ${turns} turns`;
@@ -63,7 +68,7 @@ export function previewLines(state, side, plans) {
       const sec = Math.max(...moving.map((p) => p.etaSec));
       lines.push({
         team,
-        text: `${team}: ${SPEED_WORD[speed]} to ${dest.x},${dest.y}. About ${meters} m, ${roundSec(sec)} s, ${arrival(sec, durationSec)}.`,
+        text: `${team}: ${SPEED_WORD[speed]} to ${dest.x},${dest.y}${viaText(plan.order.via)}. About ${meters} m, ${roundSec(sec)} s, ${arrival(sec, durationSec)}.`,
         notes,
       });
       continue;

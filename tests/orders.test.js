@@ -98,6 +98,47 @@ test('applied paths are exactly the previewed paths', () => {
   }
 });
 
+test('waypoints force the route through a forest the pathfinder would avoid', () => {
+  const rows = [
+    '..........',
+    '.TTTTTTTT.',
+    '..........',
+  ];
+  const units = [{ side: 'BLUFOR', team: 'ALPHA', role: 'TL', pos: [0, 1] }];
+  const s = makeState(rows, units);
+  const direct = planOrders(s, [move('ALPHA', 9, 1)])[0].soldiers[0].path;
+  assert.ok(!direct.some((p) => p.y === 1 && p.x > 0 && p.x < 9), 'without waypoints it goes around');
+  const [plan] = planOrders(s, [{ ...move('ALPHA', 9, 1), via: [{ x: 5, y: 1 }] }]);
+  const path = plan.soldiers[0].path;
+  const at = path.findIndex((p) => p.x === 5 && p.y === 1);
+  assert.ok(at >= 0 && at < path.length - 1, 'passes through the waypoint before the destination');
+  assert.deepEqual(path[path.length - 1], { x: 9, y: 1 });
+});
+
+test('waypoints are validated', () => {
+  const s = makeState([...grass(20, 19), '~'.repeat(20)], squad);
+  assert.match(validateOrder(s, { ...move('ALPHA', 5, 5), via: [{ x: 5, y: 19 }] }).reason, /waypoint 1 is impassable/);
+  assert.match(validateOrder(s, { ...move('ALPHA', 5, 5), via: [{ x: 1, y: 1 }, { x: 99, y: 1 }] }).reason, /waypoint 2 is off the map/);
+  const tooMany = Array.from({ length: s.balance.movement.maxWaypoints + 1 }, (_, i) => ({ x: i, y: 1 }));
+  assert.match(validateOrder(s, { ...move('ALPHA', 5, 5), via: tooMany }).reason, /too many waypoints/);
+});
+
+test('followers keep formation through waypoints and the sim follows the preview', () => {
+  const s = makeState(grass(20, 20), squad);
+  const orders = [{ ...move('ALPHA', 15, 5, 'run'), via: [{ x: 5, y: 8 }, { x: 12, y: 10 }] }];
+  const [plan] = planOrders(s, orders);
+  const [lead, ...rest] = plan.soldiers;
+  assert.ok(lead.path.some((p) => p.x === 12 && p.y === 10));
+  for (const p of rest) {
+    const dx = s.soldiers[p.id].pos.x - s.soldiers[lead.id].pos.x;
+    const dy = s.soldiers[p.id].pos.y - s.soldiers[lead.id].pos.y;
+    assert.deepEqual(p.path, lead.path.map((q) => ({ x: q.x + dx, y: q.y + dy })));
+  }
+  const next = cloneState(s);
+  applyOrders(next, orders, []);
+  for (const p of plan.soldiers) assert.deepEqual(next.soldiers[p.id].move.path, p.path);
+});
+
 test('hold cancels a move in progress', () => {
   const s = cloneState(makeState(grass(20, 20), squad));
   applyOrders(s, [move('ALPHA', 5, 3)], []);

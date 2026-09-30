@@ -166,6 +166,20 @@ export function drawPaths(ctx, cam, paths) {
   ctx.setLineDash([]);
 }
 
+// Waypoint markers: [{ x, y, color }]
+export function drawWaypoints(ctx, cam, points) {
+  for (const p of points) {
+    const c = toScreen(cam, p.x + 0.5, p.y + 0.5);
+    ctx.fillStyle = p.color;
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, Math.max(3, cam.scale * 0.3), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+}
+
 export function drawHover(ctx, cam, tile) {
   if (!tile) return;
   const s = toScreen(cam, tile.x, tile.y);

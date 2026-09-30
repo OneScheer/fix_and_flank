@@ -33,3 +33,4 @@ Answers to open questions and rulings on ambiguous rules. Newest at the bottom.
 - **Squad:** two fireteams of four (TL, AR, GRN, RFL). No squad leader counter yet; commands go to teams.
 - **Fog:** not yet. OPFOR is visible to the player until Milestone 3. `blocked` events name the blocking soldier, which will need filtering once fog exists.
 - **Enemy:** OPFOR gets no orders until the AI in Milestone 6.
+- **Waypoints:** a move order may carry `via`, a list of up to `movement.maxWaypoints` tiles the team leader passes through in order. Followers still take the leader's route shifted by their offset; if that is blocked they route through their own offset of each waypoint (or the waypoint itself if the offset tile is impassable). UI: click sets a new move, Shift+click adds a point (the previous destination becomes a waypoint), Backspace removes the last point, Delete clears the order.

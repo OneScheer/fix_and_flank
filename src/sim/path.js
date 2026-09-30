@@ -101,3 +101,19 @@ export function findPath(map, movement, start, goal) {
   path.reverse();
   return { path, cost: g[goalIdx] };
 }
+
+// Chain paths through a list of points (waypoints, then the goal).
+// Returns { path, cost } or null if any leg is unreachable.
+export function findRoute(map, movement, start, points) {
+  const path = [];
+  let cost = 0;
+  let at = start;
+  for (const p of points) {
+    const leg = findPath(map, movement, at, p);
+    if (!leg) return null;
+    path.push(...leg.path);
+    cost += leg.cost;
+    at = p;
+  }
+  return { path, cost };
+}
