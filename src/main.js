@@ -1,7 +1,11 @@
-// Browser entry point. Wires data, sim, render, and UI together.
+// Browser entry point. Loads data, builds the initial state, starts the UI.
 
+import { parseMap } from './sim/map.js';
 import { createState } from './sim/state.js';
-import { fitCanvas, drawEmpty } from './render/canvas.js';
+import { startApp } from './ui/app.js';
+
+const DEFAULT_MAP = 'training';
+const DEFAULT_SEED = 1;
 
 async function loadJson(path) {
   const res = await fetch(path);
@@ -10,20 +14,15 @@ async function loadJson(path) {
 }
 
 async function main() {
-  const balance = await loadJson('data/balance.json');
-  const state = createState({ balance, seed: 1 });
-
-  const canvas = document.getElementById('board');
-  const status = document.getElementById('status');
-
-  function redraw() {
-    const { ctx, width, height } = fitCanvas(canvas);
-    drawEmpty(ctx, width, height, 'No map loaded');
-  }
-
-  window.addEventListener('resize', redraw);
-  redraw();
-  status.textContent = `Turn ${state.turn}. ${state.ticksPerTurn} ticks per turn. Seed ${state.seed}.`;
+  const params = new URLSearchParams(location.search);
+  const mapName = params.get('map') ?? DEFAULT_MAP;
+  const seed = Number(params.get('seed') ?? DEFAULT_SEED);
+  const [balance, mapJson] = await Promise.all([
+    loadJson('data/balance.json'),
+    loadJson(`data/maps/${encodeURIComponent(mapName)}.json`),
+  ]);
+  const state = createState({ balance, map: parseMap(mapJson), seed });
+  window.app = startApp(state); // exposed for debugging in the console
 }
 
 main().catch((err) => {
