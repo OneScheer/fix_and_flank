@@ -4,6 +4,7 @@
 import { stepCost } from './map.js';
 import { applyOrders } from './orders.js';
 import { cloneState, isOnMap } from './state.js';
+import { updateContacts } from './spotting.js';
 import { createRng } from './rng.js';
 
 // Float tolerance for progress sums (0.1 added ten times is 0.9999999999999999).
@@ -76,14 +77,15 @@ function moveSoldiers(state, events) {
   }
 }
 
-// orders are applied at the start of this tick; pass [] on later ticks.
-// rng is unused by movement but is part of the contract for later rules.
+// One tick: orders (applied at the start of this tick; pass [] on later
+// ticks), then movement, then spotting.
 export function step(state, orders, rng) {
-  void rng;
   const next = cloneState(state);
   const events = [];
   if (orders?.length) applyOrders(next, orders, events);
   moveSoldiers(next, events);
+  const movedIds = new Set(events.filter((e) => e.type === 'moved').map((e) => e.id));
+  updateContacts(next, movedIds, rng, events);
   for (const e of events) {
     e.turn = state.turn;
     e.tick = state.tick;

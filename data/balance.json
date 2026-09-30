@@ -35,5 +35,43 @@
     "lowObstacleCost": 2,
     "formationSearchRadius": 4,
     "maxWaypoints": 8
+  },
+  "vision": {
+    "eyeHeightM": {
+      "stand": 1.6,
+      "crouch": 1.1,
+      "prone": 0.3
+    },
+    "obstacleHeightM": {
+      "0": 0,
+      "1": 1.0,
+      "2": 3.0
+    },
+    "partialExposureMarginM": 0.3,
+    "concealmentDensity": {
+      "none": 0,
+      "partial": 0.15,
+      "full": 0.35
+    },
+    "blockingConcealment": 1.0,
+    "maxRangeM": 300
+  },
+  "spotting": {
+    "basePerSec": 0.5,
+    "halfChanceRangeM": 40,
+    "autoSpotRangeM": 6,
+    "stanceFactor": {
+      "stand": 1.0,
+      "crouch": 0.4,
+      "prone": 0.2
+    },
+    "targetConcealmentFactor": {
+      "none": 1.0,
+      "partial": 0.5,
+      "full": 0.25
+    },
+    "partialExposureFactor": 0.15,
+    "movingFactor": 2.0,
+    "contactMemorySec": 60
   }
 }

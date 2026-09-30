@@ -4,6 +4,7 @@
 //   turn, tick, ticksPerTurn, tickSec,
 //   rngState,            uint32, RNG state at the start of the next turn
 //   balance, map,        frozen, shared by reference between states
+//   contacts: { [side]: { [enemyId]: { level, pos, lastSeenSec } } }  (see spotting.js)
 //   soldiers: [{
 //     id, side, team, role, pos: {x, y}, stance, suppression, status, hp,
 //     move: null | { dest, speed, path: [{x, y}], i, progress, blocked },
@@ -36,6 +37,8 @@ export function createState({ balance, map, seed }) {
     hp: balance.soldier.hp,
     move: null,
   }));
+  const contacts = {};
+  for (const s of soldiers) contacts[s.side] ??= {};
   return {
     turn: 0,
     tick: 0,
@@ -46,12 +49,13 @@ export function createState({ balance, map, seed }) {
     balance,
     map,
     soldiers,
+    contacts,
   };
 }
 
 // Copy everything a step may change. balance and map stay shared.
 export function cloneState(state) {
-  return { ...state, soldiers: structuredClone(state.soldiers) };
+  return { ...state, soldiers: structuredClone(state.soldiers), contacts: structuredClone(state.contacts) };
 }
 
 export function isOnMap(soldier) {
