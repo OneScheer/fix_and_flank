@@ -1,0 +1,14 @@
+{
+  "name": "fix-and-flank",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn-based, plan-then-watch squad infantry tactics in the browser.",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test \"tests/**/*.test.js\""
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

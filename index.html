@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fix and Flank</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='4' width='14' height='8' fill='none' stroke='%234a7fd0' stroke-width='2'/%3E%3Cpath d='M1 4L15 12M15 4L1 12' stroke='%234a7fd0' stroke-width='1.5'/%3E%3C/svg%3E">
+  <style>
+    html, body { margin: 0; height: 100%; background: #111410; color: #c8d0c2; font: 14px ui-monospace, monospace; }
+    body { display: flex; flex-direction: column; }
+    header, footer { padding: 8px 16px; }
+    header h1 { margin: 0; font-size: 16px; letter-spacing: 0.05em; }
+    #board { flex: 1; width: 100%; min-height: 0; display: block; touch-action: none; }
+  </style>
+</head>
+<body>
+  <header><h1>FIX AND FLANK</h1></header>
+  <canvas id="board"></canvas>
+  <footer id="status">Loading...</footer>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

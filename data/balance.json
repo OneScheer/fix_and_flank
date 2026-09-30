@@ -1,0 +1,11 @@
+{
+  "turn": {
+    "durationSec": 10,
+    "tickSec": 0.5
+  },
+  "map": {
+    "tileMeters": 2,
+    "defaultWidth": 80,
+    "defaultHeight": 80
+  }
+}
