@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 import { resolveTurn } from '../src/sim/step.js';
 import { spotChance } from '../src/sim/spotting.js';
 import { lineOfSight } from '../src/sim/los.js';
-import { balance, grass, makeState, trainingState } from './helpers.js';
+import { balance, grass, holdFire, makeState as makeArmed, trainingState as trainingArmed } from './helpers.js';
+
+// Spotting on its own: nobody fires (firing reveals shooters, tested in combat tests).
+const makeState = (...a) => holdFire(makeArmed(...a));
+const trainingState = (...a) => holdFire(trainingArmed(...a));
 
 const unit = (side, team, role, x, y, stance) => ({ side, team, role, pos: [x, y], ...(stance ? { stance } : {}) });
 const move = (side, team, x, y, speed = 'walk') => ({ type: 'move', side, team, dest: { x, y }, speed });

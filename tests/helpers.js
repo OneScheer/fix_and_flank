@@ -7,6 +7,7 @@ export function loadJson(relPath) {
 }
 
 export const balance = loadJson('data/balance.json');
+export const weapons = loadJson('data/weapons.json');
 
 // Small legend for hand-drawn test maps.
 export const LEGEND = {
@@ -25,11 +26,16 @@ export function makeMap(rows, units = []) {
 }
 
 export function makeState(rows, units = [], seed = 1) {
-  return createState({ balance, map: makeMap(rows, units), seed });
+  return createState({ balance, weapons, map: makeMap(rows, units), seed });
 }
 
 export function trainingState(seed = 1) {
-  return createState({ balance, map: parseMap(loadJson('data/maps/training.json')), seed });
+  return createState({ balance, weapons, map: parseMap(loadJson('data/maps/training.json')), seed });
+}
+
+// Empty everyone's magazines, for tests of movement or spotting alone.
+export function holdFire(state) {
+  return { ...state, soldiers: state.soldiers.map((s) => ({ ...s, ammo: 0 })) };
 }
 
 export const grass = (w, h) => Array.from({ length: h }, () => '.'.repeat(w));

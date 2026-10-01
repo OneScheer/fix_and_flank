@@ -3,10 +3,11 @@
 // state = {
 //   turn, tick, ticksPerTurn, tickSec,
 //   rngState,            uint32, RNG state at the start of the next turn
-//   balance, map,        frozen, shared by reference between states
+//   balance, weapons, map,  frozen, shared by reference between states
 //   contacts: { [side]: { [enemyId]: { level, pos, lastSeenSec } } }  (see spotting.js)
 //   soldiers: [{
 //     id, side, team, role, pos: {x, y}, stance, suppression, status, hp,
+//     weapon, ammo, fireCooldown (s), lastFiredSec, underFireUntilSec,
 //     move: null | { dest, speed, path: [{x, y}], i, progress, blocked },
 //   }],
 // }
@@ -24,19 +25,28 @@ export function ticksPerTurn(balance) {
   return ticks;
 }
 
-export function createState({ balance, map, seed }) {
-  const soldiers = (map?.units ?? []).map((u, id) => ({
-    id,
-    side: u.side,
-    team: u.team,
-    role: u.role,
-    pos: { x: u.pos[0], y: u.pos[1] },
-    stance: u.stance ?? balance.soldier.startStance,
-    suppression: 0,
-    status: 'active',
-    hp: balance.soldier.hp,
-    move: null,
-  }));
+export function createState({ balance, weapons, map, seed }) {
+  const soldiers = (map?.units ?? []).map((u, id) => {
+    const weapon = u.weapon ?? weapons.roleWeapons[u.role] ?? weapons.defaultWeapon;
+    if (!weapons.weapons[weapon]) throw new Error(`Unknown weapon '${weapon}' for ${u.side} ${u.team} ${u.role}`);
+    return {
+      id,
+      side: u.side,
+      team: u.team,
+      role: u.role,
+      pos: { x: u.pos[0], y: u.pos[1] },
+      stance: u.stance ?? balance.soldier.startStance,
+      suppression: 0,
+      status: 'active',
+      hp: balance.soldier.hp,
+      weapon,
+      ammo: weapons.weapons[weapon].ammo,
+      fireCooldown: 0,
+      lastFiredSec: null,
+      underFireUntilSec: null,
+      move: null,
+    };
+  });
   const contacts = {};
   for (const s of soldiers) contacts[s.side] ??= {};
   return {
@@ -47,6 +57,7 @@ export function createState({ balance, map, seed }) {
     seed: seed >>> 0,
     rngState: seed >>> 0,
     balance,
+    weapons,
     map,
     soldiers,
     contacts,
@@ -62,8 +73,9 @@ export function isOnMap(soldier) {
   return soldier.status !== 'dead';
 }
 
+// Pinned soldiers will not move; down and dead ones cannot.
 export function canMove(soldier) {
-  return soldier.status === 'active' || soldier.status === 'shaken';
+  return soldier.status !== 'pinned' && soldier.status !== 'down' && soldier.status !== 'dead';
 }
 
 export function teamMembers(state, side, team) {

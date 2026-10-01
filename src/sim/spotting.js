@@ -11,8 +11,9 @@
 // sight is lost it becomes suspected at its last known position, and is
 // forgotten after contactMemorySec. Contacts are shared across the side.
 //
-// Both sides use exactly these rules. Firing will also reveal the shooter
-// (Milestone 4).
+// Both sides use exactly these rules. Firing also gives the shooter away:
+// a muzzle flash makes it a suspected contact (combat.js), and a soldier who
+// fired within firedWindowSec is much easier to spot.
 
 import { tileAt } from './map.js';
 import { lineOfSight } from './los.js';
@@ -27,7 +28,7 @@ export function sidesOf(state) {
 
 // Chance per second for `observer` to spot `target`, with the factors
 // that produced it (for the preview and the after-action replay).
-export function spotChance(state, observer, target, los, moving) {
+export function spotChance(state, observer, target, los, moving, fired = false) {
   const { spotting } = state.balance;
   const tile = tileAt(state.map, target.pos.x, target.pos.y);
   const factors = {
@@ -38,6 +39,7 @@ export function spotChance(state, observer, target, los, moving) {
     concealmentBetween: Math.max(0, 1 - los.concealment),
     partialExposure: los.partial ? spotting.partialExposureFactor : 1,
     moving: moving ? spotting.movingFactor : 1,
+    fired: fired ? spotting.firedFactor : 1,
   };
   const perSec = Math.min(1, Object.values(factors).reduce((a, b) => a * b, 1));
   const perTick = 1 - (1 - perSec) ** state.tickSec;
@@ -45,7 +47,7 @@ export function spotChance(state, observer, target, los, moving) {
 }
 
 // Seconds since the start of the game at the end of the current tick.
-function endOfTickSec(state) {
+export function endOfTickSec(state) {
   return state.turn * state.balance.turn.durationSec + (state.tick + 1) * state.tickSec;
 }
 
@@ -82,7 +84,8 @@ export function updateContacts(state, movedIds, rng, events) {
           spottedBy = o;
           break;
         }
-        const chance = spotChance(state, o, enemy, los, movedIds.has(enemy.id)).perTick;
+        const fired = enemy.lastFiredSec != null && now - enemy.lastFiredSec <= balance.spotting.firedWindowSec;
+        const chance = spotChance(state, o, enemy, los, movedIds.has(enemy.id), fired).perTick;
         if (!best || chance > best.chance) best = { observer: o, chance };
       }
       if (!tracking && !spottedBy && best && rng.chance(best.chance)) spottedBy = best.observer;

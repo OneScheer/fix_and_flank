@@ -3,8 +3,9 @@
 
 import { stepCost } from './map.js';
 import { applyOrders } from './orders.js';
-import { cloneState, isOnMap } from './state.js';
-import { updateContacts } from './spotting.js';
+import { canMove, cloneState, isOnMap } from './state.js';
+import { endOfTickSec, updateContacts } from './spotting.js';
+import { resolveFire, updateStatus } from './combat.js';
 import { createRng } from './rng.js';
 
 // Float tolerance for progress sums (0.1 added ten times is 0.9999999999999999).
@@ -23,7 +24,8 @@ function moveSoldiers(state, events) {
   const occupied = new Map();
   for (const s of state.soldiers) if (isOnMap(s)) occupied.set(s.pos.y * w + s.pos.x, s.id);
 
-  const movers = state.soldiers.filter((s) => s.move);
+  // Pinned soldiers keep their move order but do not advance until they recover.
+  const movers = state.soldiers.filter((s) => s.move && canMove(s));
   for (const s of movers) {
     s.move.progress += (movement.speedMps[s.move.speed] / balance.map.tileMeters) * tickSec;
   }
@@ -49,7 +51,7 @@ function moveSoldiers(state, events) {
       }
       occupied.delete(s.pos.y * w + s.pos.x);
       occupied.set(nextKey, s.id);
-      events.push({ type: 'moved', id: s.id, from: { ...s.pos }, to: { ...next } });
+      events.push({ type: 'moved', id: s.id, from: { ...s.pos }, to: { ...next }, speed: m.speed });
       s.pos = { ...next };
       m.i += 1;
       m.progress = Math.max(0, m.progress - cost);
@@ -78,14 +80,17 @@ function moveSoldiers(state, events) {
 }
 
 // One tick: orders (applied at the start of this tick; pass [] on later
-// ticks), then movement, then spotting.
+// ticks), movement, fire, suppression and status, then spotting.
 export function step(state, orders, rng) {
   const next = cloneState(state);
   const events = [];
+  const now = endOfTickSec(next);
   if (orders?.length) applyOrders(next, orders, events);
   moveSoldiers(next, events);
-  const movedIds = new Set(events.filter((e) => e.type === 'moved').map((e) => e.id));
-  updateContacts(next, movedIds, rng, events);
+  const movedSpeed = new Map(events.filter((e) => e.type === 'moved').map((e) => [e.id, e.speed]));
+  resolveFire(next, movedSpeed, rng, now, events);
+  updateStatus(next, now, events);
+  updateContacts(next, new Set(movedSpeed.keys()), rng, events);
   for (const e of events) {
     e.turn = state.turn;
     e.tick = state.tick;

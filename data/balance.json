@@ -76,6 +76,63 @@
     },
     "partialExposureFactor": 0.15,
     "movingFactor": 2.0,
+    "firedFactor": 4.0,
+    "firedWindowSec": 10,
     "contactMemorySec": 60
+  },
+  "cover": {
+    "protection": {
+      "none": 0,
+      "light": 0.25,
+      "heavy": 0.5,
+      "hard": 0.8
+    },
+    "lowCoverStance": {
+      "stand": 0.3,
+      "crouch": 0.8,
+      "prone": 1.0
+    }
+  },
+  "combat": {
+    "minHit": 0.01,
+    "maxHit": 0.95,
+    "shooterStance": {
+      "stand": 0.85,
+      "crouch": 1.0,
+      "prone": 1.1
+    },
+    "targetStance": {
+      "stand": 1.0,
+      "crouch": 0.75,
+      "prone": 0.5
+    },
+    "movement": {
+      "still": 1.0,
+      "walk": 0.5,
+      "run": 0.15,
+      "crawl": 0
+    },
+    "suppressionAccuracy": {
+      "active": 1.0,
+      "shaken": 0.6,
+      "pinned": 0.25
+    },
+    "woundedAccuracy": 0.7,
+    "pinnedFireRate": 0.5,
+    "muzzleFlashRangeM": 250
+  },
+  "suppression": {
+    "nearMissRadiusTiles": 2,
+    "decayPerSec": 4,
+    "proneDecayFactor": 1.5,
+    "coverDecayFactor": 1.5,
+    "underFireDecayFactor": 0.25,
+    "underFireSec": 2,
+    "shaken": 40,
+    "pinned": 70,
+    "max": 100
+  },
+  "health": {
+    "downAtHp": 25
   }
 }

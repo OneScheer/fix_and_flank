@@ -4,7 +4,7 @@ import { planOrders } from '../src/sim/orders.js';
 import { resolveTurn } from '../src/sim/step.js';
 import { buildFrames, contactsAt, positionAt } from '../src/ui/playback.js';
 import { previewLines, remainingMoveSec } from '../src/ui/preview.js';
-import { grass, makeState, trainingState } from './helpers.js';
+import { grass, holdFire, makeState, trainingState } from './helpers.js';
 
 const move = (side, team, x, y, speed = 'walk') => ({ type: 'move', side, team, dest: { x, y }, speed });
 
@@ -70,7 +70,7 @@ test('playback contact timeline ends where the sim ends', () => {
     { side: 'BLUFOR', team: 'ALPHA', role: 'TL', pos: [0, 1] },
     { side: 'OPFOR', team: 'ALPHA', role: 'TL', pos: [2, 1] },
   ];
-  const s0 = makeState(rows, units);
+  const s0 = holdFire(makeState(rows, units));
   const t1 = resolveTurn(s0, []);
   assert.equal(contactsAt(s0.contacts.BLUFOR, t1.events, 'BLUFOR', 0).size, 0, 'nothing known before the first tick');
   assert.equal(contactsAt(s0.contacts.BLUFOR, t1.events, 'BLUFOR', s0.ticksPerTurn).get(1).level, 'spotted');
