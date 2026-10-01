@@ -69,19 +69,36 @@ test('soldiers never share a tile; a blocked soldier waits and reports why', () 
   assert.equal(events.filter((e) => e.type === 'blocked').length, 2, 'one blocked event each, not one per tick');
 });
 
-test('a follower can step into a tile vacated in the same tick', () => {
-  const s = makeState(grass(20, 1), [unit('BLUFOR', 'ALPHA', 'TL', 1, 0), unit('BLUFOR', 'ALPHA', 'RFL', 0, 0)]);
-  const { state, events } = resolveTurn(s, [move('BLUFOR', 'ALPHA', 15, 0, 'run')]);
+// Two one-soldier teams in a one-tile corridor, so formation plays no part.
+test('a soldier can step into a tile vacated in the same tick', () => {
+  const s = makeState(grass(20, 1), [unit('BLUFOR', 'ALPHA', 'TL', 1, 0), unit('BLUFOR', 'BRAVO', 'TL', 0, 0)]);
+  const { state, events } = resolveTurn(s, [move('BLUFOR', 'ALPHA', 15, 0, 'run'), move('BLUFOR', 'BRAVO', 14, 0, 'run')]);
   assert.equal(events.filter((e) => e.type === 'blocked').length, 0);
   assert.equal(state.soldiers[1].pos.x, state.soldiers[0].pos.x - 1);
 });
 
-test('a follower is not held up when the soldier ahead has a higher id', () => {
-  // TL (id 0) is behind RFL (id 1); single-pass id order would block TL every step.
-  const s = makeState(grass(20, 1), [unit('BLUFOR', 'ALPHA', 'TL', 0, 0), unit('BLUFOR', 'ALPHA', 'RFL', 1, 0)]);
-  const { state, events } = resolveTurn(s, [move('BLUFOR', 'ALPHA', 14, 0, 'run')]);
+test('a soldier is not held up when the one ahead has a higher id', () => {
+  // id 0 is behind id 1; single-pass id order would block id 0 every step.
+  const s = makeState(grass(20, 1), [unit('BLUFOR', 'ALPHA', 'TL', 0, 0), unit('BLUFOR', 'BRAVO', 'TL', 1, 0)]);
+  const { state, events } = resolveTurn(s, [move('BLUFOR', 'ALPHA', 14, 0, 'run'), move('BLUFOR', 'BRAVO', 15, 0, 'run')]);
   assert.equal(events.filter((e) => e.type === 'blocked').length, 0);
   assert.equal(state.soldiers[0].pos.x, state.soldiers[1].pos.x - 1);
+});
+
+test('a straggler closes up: two orders later the team is back in its wedge', () => {
+  const units = [
+    unit('BLUFOR', 'ALPHA', 'TL', 10, 20),
+    unit('BLUFOR', 'ALPHA', 'AR', 8, 22),
+    unit('BLUFOR', 'ALPHA', 'GRN', 12, 22),
+    unit('BLUFOR', 'ALPHA', 'RFL', 13, 38), // fell far behind
+  ];
+  let state = makeState(grass(30, 40), units);
+  state = resolveTurn(state, [move('BLUFOR', 'ALPHA', 10, 12, 'run')]).state;
+  state = resolveTurn(state, []).state;
+  const [tl, ar, grn, rfl] = state.soldiers;
+  const off = (s) => [s.pos.x - tl.pos.x, s.pos.y - tl.pos.y];
+  assert.deepEqual(tl.pos, { x: 10, y: 12 });
+  assert.deepEqual([off(ar), off(grn), off(rfl)], [[-2, 2], [2, 2], [4, 4]]);
 });
 
 test('events carry turn and tick', () => {

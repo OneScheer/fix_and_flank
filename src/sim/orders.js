@@ -43,6 +43,32 @@ function anchorOf(members) {
   return members.find((s) => s.role === 'TL') ?? members[0];
 }
 
+// Unit vector of the direction from a to b, snapped to the nearest of the
+// 8 compass directions. Defaults to north (up the map) when a equals b.
+function facing(a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  if (dx === 0 && dy === 0) return { x: 0, y: -1 };
+  const angle = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  return { x: Math.cos(angle), y: Math.sin(angle) };
+}
+
+// Wedge slot offsets (tiles from the leader) for n soldiers, turned to face
+// direction f. Slots are written facing north: x is right, y is back.
+// Rounding after the turn keeps the wedge on the grid.
+export function formationSlots(formation, n, f) {
+  const right = { x: -f.y, y: f.x };
+  const back = { x: -f.x, y: -f.y };
+  const slots = [];
+  for (let i = 0; i < n; i++) {
+    const [sx, sy] = formation.wedgeSlots[i] ?? [0, i];
+    const ox = (sx * right.x + sy * back.x) * formation.spacingTiles;
+    const oy = (sx * right.y + sy * back.y) * formation.spacingTiles;
+    slots.push({ x: Math.round(ox) + 0, y: Math.round(oy) + 0 }); // + 0 turns -0 into 0
+  }
+  return slots;
+}
+
 // Nearest passable, unreserved tile to target within radius (ties: distance, then y, then x).
 function nearestFreeTile(map, target, reserved, radius) {
   for (let r = 0; r <= radius; r++) {
@@ -124,28 +150,39 @@ export function planOrders(state, orders) {
     const anchor = anchorOf(members);
     const reserved = reservedFor(order.side);
     const speedTilesPerSec = movement.speedMps[order.speed] / tileMeters;
-    // Anchor first so the leader gets the tile that was clicked.
+    // Anchor first so the leader gets the tile that was clicked. The team
+    // forms a wedge on the destination, facing the last leg of the route.
     const ordered = [anchor, ...members.filter((s) => s !== anchor)];
+    const via = order.via ?? [];
+    const from = via.length ? via[via.length - 1] : anchor.pos;
+    const slots = formationSlots(movement.formation, ordered.length, facing(from, order.dest));
     let anchorPath = null;
-    for (const s of ordered) {
-      const offset = { x: s.pos.x - anchor.pos.x, y: s.pos.y - anchor.pos.y };
-      const target = { x: order.dest.x + offset.x, y: order.dest.y + offset.y };
+    let anchorDest = null;
+    for (const [i, s] of ordered.entries()) {
+      const target = { x: order.dest.x + slots[i].x, y: order.dest.y + slots[i].y };
       const dest = nearestFreeTile(map, target, reserved, movement.formationSearchRadius);
       if (!dest) {
         result.soldiers.push({ id: s.id, dest: null, path: null, reason: 'no free tile near the destination' });
         continue;
       }
       reserved.add(key(dest, map.width));
-      const inFormation = s !== anchor && anchorPath && dest.x === target.x && dest.y === target.y
+      if (s === anchor) anchorDest = dest;
+      // A follower already standing in its slot relative to the leader takes
+      // the leader's route shifted over, so the team keeps its shape on the
+      // move. Anyone out of place (a straggler, or the wedge turned) routes
+      // on its own and closes up at its slot.
+      const offset = anchorDest ? { x: dest.x - anchorDest.x, y: dest.y - anchorDest.y } : slots[i];
+      const inSlot = s.pos.x - anchor.pos.x === offset.x && s.pos.y - anchor.pos.y === offset.y;
+      const inFormation = s !== anchor && anchorPath && inSlot
         ? followPath(map, movement, s.pos, anchorPath, offset)
         : null;
       // Leader routes through the waypoints. A follower whose shifted route is
       // blocked passes through its own offset of each waypoint where passable.
-      const via = (order.via ?? []).map((p) => {
+      const ownVia = via.map((p) => {
         const shifted = { x: p.x + offset.x, y: p.y + offset.y };
         return inBounds(map, shifted.x, shifted.y) && isPassable(tileAt(map, shifted.x, shifted.y)) ? shifted : p;
       });
-      const found = inFormation ?? findRoute(map, movement, s.pos, [...via, dest]);
+      const found = inFormation ?? findRoute(map, movement, s.pos, [...ownVia, dest]);
       if (s === anchor) anchorPath = found?.path ?? null;
       if (!found) {
         result.soldiers.push({ id: s.id, dest, path: null, reason: 'no route to the destination' });
