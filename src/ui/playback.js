@@ -32,14 +32,25 @@ export function eventsUpTo(events, t) {
 
 // A side's contacts at fractional tick t: Map enemyId -> { level, pos }.
 // Starts from the contacts before the turn and applies this side's
-// spotted / lost / contact_expired events that have happened by t.
+// spotted / lost / suspected / contact_expired events that have happened by t.
 export function contactsAt(contactsBefore, events, side, t) {
   const known = new Map(Object.entries(contactsBefore ?? {}).map(([id, c]) => [Number(id), { level: c.level, pos: c.pos }]));
   for (const e of events) {
     if (e.side !== side || e.tick >= t) continue;
     if (e.type === 'spotted') known.set(e.id, { level: 'spotted', pos: e.pos });
-    else if (e.type === 'lost') known.set(e.id, { level: 'suspected', pos: e.pos });
+    else if (e.type === 'lost' || e.type === 'suspected') known.set(e.id, { level: 'suspected', pos: e.pos });
     else if (e.type === 'contact_expired') known.delete(e.id);
   }
   return known;
+}
+
+// Soldier status and stance at fractional tick t: Map id -> { status, stance }.
+export function soldiersAt(soldiersBefore, events, t) {
+  const now = new Map(soldiersBefore.map((s) => [s.id, { status: s.status, stance: s.stance }]));
+  for (const e of events) {
+    if (e.tick >= t) continue;
+    if (e.type === 'status') now.get(e.id).status = e.to;
+    else if (e.type === 'stance') now.get(e.id).stance = e.to;
+  }
+  return now;
 }

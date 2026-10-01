@@ -8,16 +8,18 @@ import { teamsOf } from '../sim/state.js';
 import { resolveTurn } from '../sim/step.js';
 import { createCamera, fitCamera, panBy, toTile, zoomAt } from '../render/camera.js';
 import {
-  buildTerrainLayer, drawHover, drawPaths, drawSightLines, drawSoldiers, drawSuspected, drawTerrain, drawWaypoints,
+  buildTerrainLayer, drawHits, drawHover, drawPaths, drawSightLines, drawTracers, drawSoldiers, drawSuspected, drawTerrain, drawWaypoints,
   fitCanvas, teamColor,
 } from '../render/canvas.js';
-import { buildFrames, contactsAt, eventsUpTo, positionAt } from './playback.js';
+import { buildFrames, contactsAt, eventsUpTo, positionAt, soldiersAt } from './playback.js';
 import { previewLines } from './preview.js';
 
 const PLAYER_SIDE = 'BLUFOR';
 const PLAYBACK_SPEEDS = [1, 2, 4];
 const CLICK_SLOP_PX = 4;
 const WHEEL_ZOOM = 1.15;
+const TRACER_TICKS = 1;   // how long a tracer stays on screen, in ticks
+const HIT_FLASH_TICKS = 1;
 
 const $ = (id) => document.getElementById(id);
 
@@ -38,6 +40,7 @@ export function startApp(initialState) {
     losTool: false, // draw sight lines from the selected team to the hovered tile
     reveal: false,  // debug: show OPFOR the player has not spotted, faintly
     showGrid: false, // debug: tile grid lines
+    enemyCasualties: new Map(), // enemy id -> pos, for enemies BLUFOR saw go down or die
   };
 
   const canvas = $('board');
@@ -132,6 +135,7 @@ export function startApp(initialState) {
     const entry = { before, orders, events, after };
     app.history.push(entry);
     app.state = after;
+    for (const id of enemyCasualtiesSeen(entry)) app.enemyCasualties.set(id, after.soldiers[id].pos);
     app.pending.clear();
     app.plans = [];
     app.message = '';
@@ -141,6 +145,9 @@ export function startApp(initialState) {
   function startPlayback(entry) {
     app.playback = {
       entry,
+      // Enemy casualties already known before this turn (replays recompute from history).
+      casualtiesBefore: new Map(app.history.slice(0, app.history.indexOf(entry))
+        .flatMap((h) => enemyCasualtiesSeen(h).map((id) => [id, h.after.soldiers[id].pos]))),
       frames: buildFrames(entry.before.soldiers, entry.events, entry.before.ticksPerTurn),
       elapsedTicks: 0,
       last: performance.now(),
@@ -170,15 +177,64 @@ export function startApp(initialState) {
     return `${s.team} ${s.role}`;
   }
 
+  // Enemies BLUFOR hit this turn that went down or died: the shooter saw it.
+  function enemyCasualtiesSeen(entry) {
+    const hitByUs = new Set(entry.events.filter((e) => e.type === 'hit'
+      && entry.before.soldiers[e.by].side === PLAYER_SIDE).map((e) => e.id));
+    return entry.events
+      .filter((e) => e.type === 'status' && (e.to === 'down' || e.to === 'dead') && hitByUs.has(e.id))
+      .map((e) => e.id);
+  }
+
+  // Why a shot was hard, in plain words: the factors that cut the chance most.
+  function explainChance(e) {
+    const { combat } = app.state.balance;
+    const f = e.factors;
+    const parts = [`range ${Math.round(e.rangeM)} m`];
+    if (f.cover < 1 && e.cover.tile) {
+      const where = e.cover.tile.x === e.at.x && e.cover.tile.y === e.at.y
+        ? `target in ${e.cover.tile.what}`
+        : `target behind ${e.cover.tile.what} from the ${e.cover.direction}`;
+      parts.push(where);
+    }
+    const stance = Object.keys(combat.targetStance).find((k) => combat.targetStance[k] === f.targetStance);
+    if (stance && stance !== 'stand') parts.push(`target ${stance === 'crouch' ? 'crouched' : stance}`);
+    if (f.movement < 1) parts.push('firing on the move');
+    if (f.suppression < 1) {
+      const level = Object.keys(combat.suppressionAccuracy).find((k) => combat.suppressionAccuracy[k] === f.suppression);
+      parts.push(`shooter ${level}`);
+    }
+    if (f.wounded < 1) parts.push('shooter wounded');
+    return `${Math.round(e.chance * 100)}% per round: ${parts.join(', ')}`;
+  }
+
   // Only what the player's side knows goes into the log.
-  function formatEvent(e, byId, tickSec) {
+  function formatEvent(e, ctx) {
+    const { byId, tickSec, hitByUs, after } = ctx;
     const t = `${(e.tick * tickSec).toFixed(1)} s`;
     const s = byId.get(e.id);
-    if (['spotted', 'lost', 'contact_expired'].includes(e.type)) {
+    if (['spotted', 'lost', 'contact_expired', 'suspected'].includes(e.type)) {
       if (e.side !== PLAYER_SIDE) return null;
       if (e.type === 'spotted') return `${t}  CONTACT: enemy at ${e.pos.x},${e.pos.y}, spotted by ${soldierName(byId.get(e.by))}.`;
       if (e.type === 'lost') return `${t}  Lost sight of enemy. Last seen at ${e.pos.x},${e.pos.y}.`;
+      if (e.type === 'suspected') return `${t}  Muzzle flash: enemy suspected at ${e.pos.x},${e.pos.y}.`;
       return `${t}  Contact at ${e.pos.x},${e.pos.y} is stale, dropped.`;
+    }
+    if (e.type === 'fire') {
+      const target = byId.get(e.target);
+      const hits = `${e.hits} hit${e.hits === 1 ? '' : 's'}`;
+      if (s.side === PLAYER_SIDE) {
+        return `${t}  ${soldierName(s)} fires ${e.rounds} at enemy at ${e.at.x},${e.at.y}: ${hits}. ${explainChance(e)}.`;
+      }
+      if (target.side === PLAYER_SIDE) {
+        return `${t}  Taking fire from ${e.from.x},${e.from.y} at ${soldierName(target)}: ${hits}.`;
+      }
+      return null;
+    }
+    if (e.type === 'status' && s.side !== PLAYER_SIDE) {
+      if (!hitByUs.has(e.id) || (e.to !== 'down' && e.to !== 'dead')) return null;
+      const pos = after.soldiers[e.id].pos;
+      return `${t}  Enemy at ${pos.x},${pos.y} ${e.to === 'dead' ? 'killed' : 'down'}.`;
     }
     if ((e.side ?? s?.side) !== PLAYER_SIDE) return null;
     switch (e.type) {
@@ -192,6 +248,15 @@ export function startApp(initialState) {
         return `${t}  ${soldierName(s)} blocked at ${e.at.x},${e.at.y}, waiting.`;
       case 'arrived':
         return `${t}  ${soldierName(s)} in position at ${e.pos.x},${e.pos.y}.`;
+      case 'status': {
+        const words = {
+          active: 'recovered', wounded: 'wounded', shaken: 'shaken (accuracy down)',
+          pinned: 'PINNED (will not move, poor return fire)', down: 'DOWN (casualty)', dead: 'KILLED',
+        };
+        return `${t}  ${soldierName(s)} ${words[e.to]}.`;
+      }
+      case 'out_of_ammo':
+        return `${t}  ${soldierName(s)} is out of ammo.`;
       default:
         return null;
     }
@@ -256,8 +321,13 @@ export function startApp(initialState) {
     const shown = app.playback ? eventsUpTo(entry.events, app.playback.elapsedTicks) : entry.events;
     if (shown.length === loggedCount) return;
     loggedCount = shown.length;
-    const byId = new Map(entry.before.soldiers.map((s) => [s.id, s]));
-    const text = shown.map((e) => formatEvent(e, byId, entry.before.tickSec)).filter(Boolean);
+    const ctx = {
+      byId: new Map(entry.before.soldiers.map((s) => [s.id, s])),
+      tickSec: entry.before.tickSec,
+      hitByUs: new Set(entry.events.filter((e) => e.type === 'hit' && entry.before.soldiers[e.by].side === PLAYER_SIDE).map((e) => e.id)),
+      after: entry.after,
+    };
+    const text = shown.map((e) => formatEvent(e, ctx)).filter(Boolean);
     log.textContent = text.length ? text.join('\n') : 'Nothing to report.';
     log.scrollTop = log.scrollHeight;
   }
@@ -281,6 +351,10 @@ export function startApp(initialState) {
       const s = app.state.soldiers.find((x) => x.pos.x === t.x && x.pos.y === t.y && x.status !== 'dead');
       if (s && (s.side === PLAYER_SIDE || known[s.id]?.level === 'spotted' || app.reveal)) {
         text += ` | ${s.side} ${soldierName(s)}, ${s.stance}, ${s.status}`;
+        if (s.side === PLAYER_SIDE) {
+          const w = app.state.weapons.weapons[s.weapon];
+          text += `, hp ${s.hp}, suppression ${Math.round(s.suppression)}, ${w.name} ammo ${s.ammo}/${w.ammo}`;
+        }
       }
       const suspected = Object.values(known).find((c) => c.level === 'suspected' && c.pos.x === t.x && c.pos.y === t.y);
       if (suspected) text += ' | suspected enemy (last known position)';
@@ -324,19 +398,39 @@ export function startApp(initialState) {
   // ---- drawing ----
 
   // Enemy counters and markers the player is allowed to see.
-  function enemyView(known, positionOf) {
+  // statusOf(s) -> { status, stance } at the moment being drawn.
+  function enemyView(known, positionOf, statusOf, casualties) {
     const counters = [];
     const suspected = [];
     for (const s of app.state.soldiers) {
       if (s.side === PLAYER_SIDE) continue;
       const c = known.get(s.id);
-      if (c?.level === 'spotted') counters.push({ soldier: s, pos: positionOf(s) });
+      if (c?.level === 'spotted') counters.push({ soldier: s, pos: positionOf(s), ...statusOf(s) });
+      else if (casualties.has(s.id)) counters.push({ soldier: s, pos: casualties.get(s.id), ...statusOf(s) });
       else {
         if (c?.level === 'suspected') suspected.push(c.pos);
-        if (app.reveal) counters.push({ soldier: s, pos: positionOf(s), ghost: true });
+        if (app.reveal) counters.push({ soldier: s, pos: positionOf(s), ghost: true, ...statusOf(s) });
       }
     }
     return { counters, suspected };
+  }
+
+  // Tracers and hit flashes the player can see at fractional tick t.
+  function combatEffects(entry, t) {
+    const sideOf = (id) => entry.before.soldiers[id].side;
+    const ours = (e) => sideOf(e.id) === PLAYER_SIDE || sideOf(e.target ?? e.id) === PLAYER_SIDE
+      || (e.by !== undefined && sideOf(e.by) === PLAYER_SIDE);
+    const tracers = [];
+    const hits = [];
+    for (const e of entry.events) {
+      const age = t - e.tick;
+      if (e.type === 'fire' && age >= 0 && age < TRACER_TICKS && ours(e)) {
+        tracers.push({ from: e.from, to: e.at, side: sideOf(e.id), alpha: 1 - age / TRACER_TICKS });
+      } else if (e.type === 'hit' && age >= 0 && age < HIT_FLASH_TICKS && ours(e)) {
+        hits.push({ pos: positionAt(app.playback.frames, e.id, e.tick + 1), alpha: 1 - age / HIT_FLASH_TICKS });
+      }
+    }
+    return { tracers, hits };
   }
 
   function frame(now) {
@@ -352,13 +446,20 @@ export function startApp(initialState) {
       const ticks = pb.entry.before.ticksPerTurn;
       const t = Math.min(pb.elapsedTicks, ticks);
       const known = contactsAt(pb.entry.before.contacts[PLAYER_SIDE], pb.entry.events, PLAYER_SIDE, t);
-      const view = enemyView(known, (s) => positionAt(pb.frames, s.id, t));
+      const status = soldiersAt(pb.entry.before.soldiers, pb.entry.events, t);
+      const casualties = new Map(pb.casualtiesBefore);
+      const view = enemyView(known, (s) => positionAt(pb.frames, s.id, t), (s) => status.get(s.id), casualties);
       drawSuspected(ctx, cam, view.suspected);
       soldiers = [
         ...pb.entry.before.soldiers.filter((s) => s.side === PLAYER_SIDE)
-          .map((s) => ({ soldier: s, pos: positionAt(pb.frames, s.id, t) })),
+          .map((s) => ({ soldier: s, pos: positionAt(pb.frames, s.id, t), ...status.get(s.id) })),
         ...view.counters,
       ];
+      const fx = combatEffects(pb.entry, t);
+      drawTracers(ctx, cam, fx.tracers);
+      drawSoldiers(ctx, cam, soldiers);
+      drawHits(ctx, cam, fx.hits);
+      soldiers = [];
       renderLog();
       if (pb.elapsedTicks >= ticks) endPlayback();
     } else {
@@ -386,7 +487,7 @@ export function startApp(initialState) {
       }
       drawWaypoints(ctx, cam, waypoints);
       const known = new Map(Object.entries(state.contacts[PLAYER_SIDE] ?? {}).map(([id, c]) => [Number(id), c]));
-      const view = enemyView(known, (s) => s.pos);
+      const view = enemyView(known, (s) => s.pos, () => ({}), app.enemyCasualties);
       drawSuspected(ctx, cam, view.suspected);
       if (app.losTool && app.hover && inBounds(state.map, app.hover.x, app.hover.y)) {
         drawSightLines(ctx, cam, sightChecks(app.hover).map(({ soldier, los }) => ({
@@ -395,7 +496,7 @@ export function startApp(initialState) {
       }
       soldiers = [
         ...state.soldiers.filter((s) => s.side === PLAYER_SIDE).map((s) => ({
-          soldier: s, pos: s.pos, selected: s.team === app.selectedTeam,
+          soldier: s, pos: s.pos, selected: s.team === app.selectedTeam, suppression: s.suppression,
         })),
         ...view.counters,
       ];

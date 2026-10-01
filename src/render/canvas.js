@@ -27,6 +27,12 @@ export const COLORS = {
   counterText: '#ffffff',
   hover: 'rgba(255, 255, 255, 0.7)',
   losClear: 'rgba(120, 230, 120, 0.9)',
+  shaken: '#e8c547',
+  pinned: '#ff6a3d',
+  casualty: '#d8d8d8',
+  tracerBlufor: '255, 230, 140',
+  tracerOpfor: '255, 120, 90',
+  hit: '#ff3b2f',
   losBlocked: 'rgba(240, 90, 70, 0.9)',
   select: '#ffffff',
 };
@@ -225,6 +231,34 @@ export function drawSightLines(ctx, cam, lines) {
   }
 }
 
+// Tracers: [{ from, to, side, alpha }]. Drawn tile center to tile center.
+export function drawTracers(ctx, cam, tracers) {
+  for (const t of tracers) {
+    const a = toScreen(cam, t.from.x + 0.5, t.from.y + 0.5);
+    const b = toScreen(cam, t.to.x + 0.5, t.to.y + 0.5);
+    const rgb = t.side === 'OPFOR' ? COLORS.tracerOpfor : COLORS.tracerBlufor;
+    ctx.strokeStyle = `rgba(${rgb}, ${t.alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+}
+
+// Hit flashes: [{ pos, alpha }].
+export function drawHits(ctx, cam, hits) {
+  for (const h of hits) {
+    const c = toScreen(cam, h.pos.x + 0.5, h.pos.y + 0.5);
+    ctx.globalAlpha = h.alpha;
+    ctx.fillStyle = COLORS.hit;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, Math.max(4, cam.scale * 0.6), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 export function drawHover(ctx, cam, tile) {
   if (!tile) return;
   const s = toScreen(cam, tile.x, tile.y);
@@ -235,16 +269,20 @@ export function drawHover(ctx, cam, tile) {
 
 // NATO-style counters. BLUFOR: blue rectangle. OPFOR: red diamond.
 // Team color stripe on top. Prone soldiers are drawn flatter.
-// soldiers: [{ soldier, pos: {x, y} (fractional tile), selected, ghost }]
+// soldiers: [{ soldier, pos: {x, y} (fractional tile), selected, ghost, status, stance, suppression }]
 // ghost: drawn faint (debug view of soldiers the player has not spotted).
+// status / stance override the soldier's own (playback); suppression (0-100)
+// draws a bar under the counter when given.
 export function drawSoldiers(ctx, cam, soldiers) {
   const size = Math.max(8, cam.scale * 0.9);
-  for (const { soldier, pos, selected, ghost } of soldiers) {
-    if (soldier.status === 'dead') continue;
-    ctx.globalAlpha = ghost ? 0.35 : 1;
+  for (const { soldier, pos, selected, ghost, status: st, stance: sn, suppression } of soldiers) {
+    const status = st ?? soldier.status;
+    const stance = sn ?? soldier.stance;
+    const casualty = status === 'down' || status === 'dead';
+    ctx.globalAlpha = ghost ? 0.35 : status === 'dead' ? 0.45 : 1;
     const c = toScreen(cam, pos.x + 0.5, pos.y + 0.5);
     const w = size;
-    const h = soldier.stance === 'prone' ? size * 0.5 : size * 0.7;
+    const h = stance === 'prone' ? size * 0.5 : size * 0.7;
     ctx.lineWidth = selected ? 2 : 1;
     ctx.strokeStyle = selected ? COLORS.select : '#000000';
     if (soldier.side === 'OPFOR') {
@@ -270,6 +308,30 @@ export function drawSoldiers(ctx, cam, soldiers) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(soldier.role, c.x, c.y + (soldier.side === 'OPFOR' ? 0 : h * 0.1));
+    }
+    if (casualty) {
+      ctx.strokeStyle = COLORS.casualty;
+      ctx.lineWidth = Math.max(1.5, size * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(c.x - w * 0.45, c.y - w * 0.45);
+      ctx.lineTo(c.x + w * 0.45, c.y + w * 0.45);
+      ctx.moveTo(c.x + w * 0.45, c.y - w * 0.45);
+      ctx.lineTo(c.x - w * 0.45, c.y + w * 0.45);
+      ctx.stroke();
+    } else if (status === 'shaken' || status === 'pinned') {
+      ctx.strokeStyle = status === 'pinned' ? COLORS.pinned : COLORS.shaken;
+      ctx.lineWidth = status === 'pinned' ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, w * 0.75, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (suppression > 0 && !casualty) {
+      const bw = w;
+      const by = c.y + h / 2 + 2;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      ctx.fillRect(c.x - bw / 2, by, bw, 3);
+      ctx.fillStyle = suppression >= 70 ? COLORS.pinned : suppression >= 40 ? COLORS.shaken : '#cccccc';
+      ctx.fillRect(c.x - bw / 2, by, (bw * Math.min(100, suppression)) / 100, 3);
     }
   }
   ctx.globalAlpha = 1;
