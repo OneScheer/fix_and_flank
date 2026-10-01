@@ -37,6 +37,7 @@ export function startApp(initialState) {
     message: '',
     losTool: false, // draw sight lines from the selected team to the hovered tile
     reveal: false,  // debug: show OPFOR the player has not spotted, faintly
+    showGrid: false, // debug: tile grid lines
   };
 
   const canvas = $('board');
@@ -341,7 +342,7 @@ export function startApp(initialState) {
   function frame(now) {
     const { ctx, width: w, height: h } = fitCanvas(canvas);
     const { state, cam } = app;
-    drawTerrain(ctx, cam, app.layer, state.map, w, h);
+    drawTerrain(ctx, cam, app.layer, state.map, w, h, app.showGrid);
 
     let soldiers;
     if (app.playback) {
@@ -474,6 +475,7 @@ export function startApp(initialState) {
     else if (k === 'delete') clearOrder();
     else if (k === 'p') replayLast();
     else if (k === 'l') toggleLosTool();
+    else if (k === 'g') app.showGrid = !app.showGrid;
     else if (k === 'v') {
       app.reveal = !app.reveal;
       renderPanel();

@@ -114,14 +114,14 @@ export function buildTerrainLayer(map) {
   return layer;
 }
 
-export function drawTerrain(ctx, cam, layer, map, width, height) {
+export function drawTerrain(ctx, cam, layer, map, width, height, showGrid = false) {
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, width, height);
   const o = toScreen(cam, 0, 0);
   ctx.imageSmoothingEnabled = cam.scale < TILE_PX;
   ctx.drawImage(layer, o.x, o.y, map.width * cam.scale, map.height * cam.scale);
 
-  if (cam.scale >= 12) {
+  if (showGrid && cam.scale >= 12) {
     ctx.strokeStyle = COLORS.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
