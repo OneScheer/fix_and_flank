@@ -17,12 +17,11 @@ async function main() {
   const params = new URLSearchParams(location.search);
   const mapName = params.get('map') ?? DEFAULT_MAP;
   const seed = Number(params.get('seed') ?? DEFAULT_SEED);
-  const [balance, weapons, mapJson] = await Promise.all([
+  const [balance, mapJson] = await Promise.all([
     loadJson('data/balance.json'),
-    loadJson('data/weapons.json'),
     loadJson(`data/maps/${encodeURIComponent(mapName)}.json`),
   ]);
-  const state = createState({ balance, weapons, map: parseMap(mapJson), seed });
+  const state = createState({ balance, map: parseMap(mapJson, balance), seed });
   window.app = startApp(state); // exposed for debugging in the console
 }
 

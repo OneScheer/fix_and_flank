@@ -8,7 +8,7 @@
   <style>
     :root {
       --bg: #111410; --panel: #181c17; --line: #2c3329; --text: #c8d0c2; --dim: #8a9484;
-      --accent: #4a7fd0; --engage: #b8452f;
+      --accent: #4a7fd0; --go: #b8452f;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.4 ui-monospace, monospace; }
@@ -26,13 +26,13 @@
     button.selected { border-color: var(--accent); background: #22324a; }
     .row { display: flex; gap: 6px; flex-wrap: wrap; }
     .row button { flex: 1; }
-    #teams { display: flex; flex-direction: column; gap: 6px; }
-    .team { text-align: left; border-left-width: 4px; }
-    .team.selected { background: #22324a; border-color: var(--accent); }
-    .note { color: #e0b060; margin-top: 3px; }
-    #engage { background: var(--engage); border-color: #d9674f; color: #fff; font-weight: bold; letter-spacing: 0.1em; padding: 10px; }
+    #units { display: flex; flex-direction: column; gap: 6px; }
+    .unit { text-align: left; }
+    #active { color: var(--text); }
+    #preview { min-height: 3em; }
+    #confirm { background: var(--go); border-color: #d9674f; color: #fff; font-weight: bold; letter-spacing: 0.1em; padding: 10px; }
     #message { color: #e0b060; min-height: 1.4em; }
-    #log { margin: 0; white-space: pre-wrap; color: var(--dim); max-height: 220px; overflow-y: auto; font-size: 12px; }
+    #log { margin: 0; white-space: pre-wrap; color: var(--dim); max-height: 260px; overflow-y: auto; font-size: 12px; }
     .keys { color: var(--dim); font-size: 12px; }
     footer { padding: 6px 16px; border-top: 1px solid var(--line); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     @media (max-width: 800px) {
@@ -48,59 +48,39 @@
     <canvas id="board"></canvas>
     <aside>
       <section>
-        <h2>Fireteams</h2>
-        <div id="teams"></div>
+        <h2>Activation</h2>
+        <div id="active"></div>
       </section>
       <section>
-        <h2>Order (click on the map)</h2>
+        <h2>Your units</h2>
+        <div id="units"></div>
+      </section>
+      <section>
+        <h2>Order</h2>
         <div class="row">
           <button id="mode-move" title="M">Move</button>
-          <button id="mode-fire" title="F">Fire</button>
-          <button id="mode-suppress" title="S">Suppress</button>
-        </div>
-        <div class="row" style="margin-top: 6px">
-          <button id="mode-overwatch" title="O">Overwatch</button>
-          <button id="mode-assault" title="A">Assault</button>
-          <button id="mode-grenade" title="T">Grenade</button>
+          <button id="mode-fast" title="R">Fast move</button>
+          <button id="mode-rally" title="L">Rally (SL)</button>
         </div>
       </section>
       <section>
-        <h2>Stance (order now)</h2>
-        <div class="row">
-          <button id="stance-stand">Stand</button>
-          <button id="stance-crouch">Crouch</button>
-          <button id="stance-prone">Prone</button>
-        </div>
-      </section>
-      <section>
-        <h2>Move speed</h2>
-        <div class="row">
-          <button id="speed-walk">Walk</button>
-          <button id="speed-run">Run</button>
-          <button id="speed-crawl">Crawl</button>
-          <button id="holdfire" title="X">Hold fire</button>
-        </div>
+        <h2>Preview</h2>
+        <div id="preview"></div>
+        <div id="message"></div>
       </section>
       <section class="row">
-        <button id="hold">Hold</button>
-        <button id="clear">Clear</button>
-        <button id="lostool">LOS check</button>
-      </section>
-      <div id="message"></div>
-      <button id="engage">ENGAGE</button>
-      <section class="row">
-        <button id="replay">Replay last turn</button>
-        <button id="pbspeed">Playback 1x</button>
+        <button id="pass" title="P">Pass</button>
+        <button id="confirm" title="Space">CONFIRM</button>
       </section>
       <section>
-        <h2>Last turn</h2>
+        <h2>Log</h2>
         <pre id="log"></pre>
       </section>
       <section class="keys">
-        Orders: M move, F fire, S suppress, O overwatch, A assault, T grenade. Shift+click adds a move waypoint.
-        1-9 select team. W / R / C walk, run, crawl. X hold fire on the move. H hold. Backspace undo last point. Delete clear.
-        Space engage (or skip playback). P replay. Home fit map.
-        L line of sight check. G grid. V debug: show all OPFOR.
+        Click a unit to select it (click again to switch between a team and the SL in the same hex).
+        Click a highlighted hex to plan, click it again or press Space to confirm. Esc cancels.
+        M move, R fast move, L rally, P pass, Tab next unit. Home fits the map.
+        Fire and assault come in the next milestones.
       </section>
     </aside>
   </main>
