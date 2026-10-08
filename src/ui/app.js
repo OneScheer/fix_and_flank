@@ -10,6 +10,7 @@ import { canActivate, unitsAt } from '../sim/state.js';
 import { chooseAction } from '../ai/basic.js';
 import { createCamera, fitCamera, panBy, toWorld, zoomAt } from '../render/camera.js';
 import { COLORS, drawCounters, drawHexMarks, drawMap, drawPath, fitCanvas } from '../render/hexmap.js';
+import { positionAlong } from './anim.js';
 import { eventText, passText, previewAction } from './describe.js';
 
 const PLAYER_SIDE = 'BLUFOR';
@@ -220,15 +221,21 @@ export function startApp(initialState) {
   function positionOf(u, now) {
     const a = app.anim.find((x) => x.id === u.id);
     if (!a) return center(u.pos);
-    const t = (now - a.start) / MOVE_ANIM_MS;
-    const n = a.points.length - 1;
-    if (t >= n) return a.points[n];
-    const i = Math.floor(t);
-    const f = t - i;
-    return { x: a.points[i].x + (a.points[i + 1].x - a.points[i].x) * f, y: a.points[i].y + (a.points[i + 1].y - a.points[i].y) * f };
+    return positionAlong(a.points, (now - a.start) / MOVE_ANIM_MS);
   }
 
+  // Draw every frame; an error is shown instead of silently stopping the loop.
   function frame(now) {
+    try {
+      draw(now);
+    } catch (err) {
+      console.error(err);
+      $('message').textContent = `Display error: ${err.message}`;
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function draw(now) {
     const { ctx, width, height } = fitCanvas(canvas);
     const s = app.state;
     const obj = s.map.objective ? { col: s.map.objective[0], row: s.map.objective[1] } : null;
@@ -248,7 +255,9 @@ export function startApp(initialState) {
       drawPath(ctx, app.cam, u.pos, path, COLORS.plan);
     }
 
+    const animating = app.anim.length;
     app.anim = app.anim.filter((a) => (now - a.start) / MOVE_ANIM_MS < a.points.length - 1);
+    if (animating && !app.anim.length) render(); // the panel waits for moves to finish
     const counters = s.units.map((u) => ({
       unit: u,
       pos: positionOf(u, now),
@@ -258,7 +267,6 @@ export function startApp(initialState) {
     // Teams first so the SL sits on top.
     counters.sort((a, b) => (a.unit.kind === 'leader') - (b.unit.kind === 'leader'));
     drawCounters(ctx, app.cam, counters, s.balance.unit.roles);
-    requestAnimationFrame(frame);
   }
 
   // ---- input ----
