@@ -123,6 +123,7 @@ Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), 
 - Each die at or above the TN is a hit. 1 hit: the target is suppressed (already suppressed: pinned). 2 or more hits: pinned.
 - Each hit gets a casualty roll against the target's directional cover (for example 4+ in the open, 5+ in a trench seen from the flank, 6 behind its parapet). Each success removes a soldier (rifleman first, AR last).
 - Fire hits the fireteam in the hex; the SL only when he is alone there. Suppressive fire on a hex with an unseen enemy can still hit it; the shooter sees the dice but not the effect.
+- **Split fire (OPFOR only):** an OPFOR team with no enemy next to it may divide its dice between two hexes (the larger half first), each half rolled at its own target number.
 - **Units that moved this turn cannot fire.** Suppressed units fire at worse odds. Pinned units cannot fire. A spotted enemy in the next hex cannot be fired on: that is an assault (milestone 5).
 - A unit that fires is spotted by every enemy with line of sight until its side's next turn starts.
 

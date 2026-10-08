@@ -61,7 +61,9 @@
     "exposedMod": -1,
     "suppressedShooterMod": 1,
     "blindMod": 2,
-    "pinHits": 2
+    "pinHits": 2,
+    "splitMod": 0,
+    "splitSides": ["OPFOR"]
   },
   "assault": {
     "attackTn": { "ok": 5, "suppressed": 3, "pinned": 3 },
@@ -74,6 +76,8 @@
   "ai": {
     "openFireRange": 6,
     "pinWeight": 0.5,
+    "suppressWeight": 2,
+    "splitFire": true,
     "assaultTakeAtLeast": 0.6,
     "counterattackRange": 3,
     "counterattackChance": 0.35,

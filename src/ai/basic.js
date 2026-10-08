@@ -15,7 +15,9 @@
 //   RETREAT        down to retreatAtSoldiers: move away from known enemies.
 //   ENGAGED        a spotted enemy within openFireRange, or one that has
 //                  fired (return fire, any range): aimed fire at the best
-//                  target (expected casualties + pinWeight x pin chance).
+//                  target (expected casualties + pinWeight x pin chance +
+//                  suppressWeight x chance to suppress), or split fire on the
+//                  best two when that scores higher (not with an enemy next to it).
 //   REPOSITION     poor cover against the nearest known enemy: move to a
 //                  next hex with goodCover that is not next to an enemy.
 //   HOLD           otherwise: stay put and hold fire (firing gives it away).
@@ -26,7 +28,7 @@
 import { validateAction } from '../sim/actions.js';
 import { assaultSolution } from '../sim/assault.js';
 import { coverAgainst } from '../sim/cover.js';
-import { fireSolution, pinAt } from '../sim/combat.js';
+import { fireSolutions, pinAt } from '../sim/combat.js';
 import { distance, key, neighbors } from '../sim/hex.js';
 import { inBounds } from '../sim/map.js';
 import { assaultOdds, fireOdds } from '../sim/odds.js';
@@ -34,6 +36,44 @@ import { projectOrders } from '../sim/orders.js';
 import { createRng } from '../sim/rng.js';
 import { knownEnemies } from '../sim/spotting.js';
 import { canActivate, currentPhase, isSuppressed } from '../sim/state.js';
+
+// The value of a shot: expected casualties, plus the chance to pin, plus the
+// chance to suppress (worth less on a target that is already suppressed).
+function shotScore(state, sol, ai) {
+  const t = state.units[sol.target];
+  const o = fireOdds({ dice: sol.dice, tn: sol.tn, casualtyOn: sol.cover.casualtyOn, pinAt: pinAt(state.balance, t.status), soldiers: t.soldiers.length });
+  return o.expectedCasualties + ai.pinWeight * o.pin + ai.suppressWeight * o.anyHit * (isSuppressed(t) ? 0.5 : 1);
+}
+
+// The best fire order on spotted targets: one target, or two for split fire.
+function bestFire(state, u, spotted) {
+  const ai = state.balance.ai;
+  const targets = spotted.filter((c) => {
+    const range = distance(c.pos, u.pos);
+    return range >= 2 && (range <= ai.openFireRange || c.unit.fired); // return fire at any range
+  });
+  let best = null;
+  const consider = (action, why) => {
+    if (!validateAction(state, action).ok) return;
+    const sols = fireSolutions(state, u, action);
+    if (sols.some((x) => !x.ok || !x.aimed)) return;
+    const score = sols.reduce((sum, x) => sum + shotScore(state, x, ai), 0);
+    if (!best || score > best.score) best = { action, score, why: why(sols) };
+  };
+  for (const c of targets) {
+    consider({ type: 'fire', unit: u.id, target: { ...c.pos } }, ([x]) => `fire on ${key(c.pos)}, hit on ${x.tn}+`);
+  }
+  if (ai.splitFire) {
+    for (const a of targets) {
+      for (const b of targets) {
+        if (a === b) continue;
+        consider({ type: 'fire', unit: u.id, target: { ...a.pos }, second: { ...b.pos } },
+          ([x, y]) => `split fire: ${x.dice} dice on ${key(a.pos)} (${x.tn}+), ${y.dice} on ${key(b.pos)} (${y.tn}+)`);
+      }
+    }
+  }
+  return best;
+}
 
 // What the side knows: [{ id, level, pos, unit? }]; `unit` only when spotted.
 function contacts(state, side) {
@@ -103,21 +143,10 @@ function decide(state, u, roll) {
     }
   }
 
-  // Fire on the best spotted target in range (not the next hex: that is an assault).
-  let shot = null;
-  for (const c of spotted) {
-    const range = distance(c.pos, u.pos);
-    if (range < 2 || (range > ai.openFireRange && !c.unit.fired)) continue; // return fire at any range
-    const action = { type: 'fire', unit: u.id, target: { ...c.pos } };
-    if (!validateAction(state, action).ok) continue;
-    const sol = fireSolution(state, u, c.pos);
-    if (!sol.aimed) continue;
-    const t = state.units[sol.target];
-    const o = fireOdds({ dice: sol.dice, tn: sol.tn, casualtyOn: sol.cover.casualtyOn, pinAt: pinAt(state.balance, t.status), soldiers: t.soldiers.length });
-    const score = o.expectedCasualties + ai.pinWeight * o.pin;
-    if (!shot || score > shot.score) shot = { action, score, tn: sol.tn, at: c.pos };
-  }
-  if (shot) return { mode: 'ENGAGED', action: shot.action, why: `fire on ${key(shot.at)}, hit on ${shot.tn}+` };
+  // Fire on the best spotted target in range (not the next hex: that is an
+  // assault), or split the fire between the best two.
+  const shot = bestFire(state, u, spotted);
+  if (shot) return { mode: 'ENGAGED', action: shot.action, why: shot.why };
 
   // Get into cover against the nearest known enemy.
   const threat = nearest(known, u.pos);

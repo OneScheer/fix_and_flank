@@ -6,7 +6,7 @@ import { chooseOrders, planOrders } from '../src/ai/basic.js';
 import { validateAction } from '../src/sim/actions.js';
 import { fireSolution } from '../src/sim/combat.js';
 import { distance, neighbors } from '../src/sim/hex.js';
-import { commitOrders } from '../src/sim/orders.js';
+import { commitOrders, projectOrders } from '../src/sim/orders.js';
 import { createRng } from '../src/sim/rng.js';
 import { knownEnemies } from '../src/sim/spotting.js';
 import { H, balance, makeState, open, toPhase, trainingState, unit } from './helpers.js';
@@ -123,11 +123,12 @@ function scriptedBlufor(s) {
   const name = s.balance.turn.phases[s.phase].name;
   const orders = [];
   for (const u of s.units.filter((x) => x.side === 'BLUFOR' && x.status !== 'eliminated')) {
+    const p = projectOrders(s, orders); // each order checked against the ones before it, as the UI does
     if (name === 'movement') {
-      const to = neighbors(u.pos).filter((h) => h.row < u.pos.row).find((h) => validateAction(s, { type: 'move', unit: u.id, to: h }).ok);
+      const to = neighbors(u.pos).filter((h) => h.row < u.pos.row).find((h) => validateAction(p, { type: 'move', unit: u.id, to: h }).ok);
       if (to) orders.push({ type: 'move', unit: u.id, to });
     } else {
-      const c = knownEnemies(s, 'BLUFOR').find((k) => k.level === 'spotted' && validateAction(s, { type: 'fire', unit: u.id, target: k.pos }).ok);
+      const c = knownEnemies(s, 'BLUFOR').find((k) => k.level === 'spotted' && validateAction(p, { type: 'fire', unit: u.id, target: k.pos }).ok);
       if (c) orders.push({ type: 'fire', unit: u.id, target: c.pos });
     }
   }
@@ -161,4 +162,33 @@ test('the AI is deterministic', () => {
   const b = playGame(4, 6);
   assert.deepEqual(a.s.units, b.s.units);
   assert.deepEqual(a.events, b.events);
+});
+
+// ---- split fire ----
+
+// OPFOR ALPHA (0) dug in at 3,2; two BLUFOR teams spotted in the open, not next to it.
+function twoThreats(extra = []) {
+  return toPhase(makeState(ROWS, [
+    unit('OPFOR', 'ALPHA', 3, 2), unit('BLUFOR', 'ALPHA', 2, 6), unit('BLUFOR', 'BRAVO', 5, 5), ...extra,
+  ], 1, PARAPETS), 'enemy action');
+}
+
+test('facing two spotted teams, the AI splits its fire between them', () => {
+  const s = twoThreats();
+  const p = modeOf(s, 0);
+  assert.equal(p.mode, 'ENGAGED');
+  assert.ok(p.action.second, JSON.stringify(p));
+  const targets = [p.action.target, p.action.second].map((h) => `${h.col},${h.row}`).sort();
+  assert.deepEqual(targets, ['2,6', '5,5']);
+  const r = commit(s, chooseOrders(s, 'OPFOR'));
+  const fires = r.events.filter((e) => e.type === 'fire' && e.unit === 0);
+  assert.equal(fires.length, 2);
+  assert.deepEqual(fires.map((e) => e.dice.length), [3, 2], 'five dice split three and two');
+});
+
+test('...but not with an enemy next to it: then it fires at one target only', () => {
+  const s = twoThreats([unit('BLUFOR', 'CHARLIE', 3, 3)]);
+  s.units[3].status = 'suppressed'; // next to the trench, not worth assaulting
+  const p = modeOf(s, 0);
+  assert.ok(!p.action?.second, JSON.stringify(p));
 });

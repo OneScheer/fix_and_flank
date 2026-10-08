@@ -588,7 +588,8 @@ export function startApp(initialState, { reveal = false } = {}) {
         if (a.type === 'fire' || assaultVia(projectOrders(s, app.plan.slice(0, i)), a)) {
           const to = a.type === 'fire' ? a.target : a.to;
           const color = !checks[i].ok ? COLORS.invalid : a.type === 'move' ? COLORS.assault : a.unit === app.selected ? COLORS.plan : COLORS.fireInk;
-          overlay.push(() => drawFire(ctx, app.cam, from, to, color, 1, unit(a.unit).kind === 'leader' ? 'SL' : unit(a.unit).team.charAt(0)));
+          overlay.push(() => drawFire(ctx, app.cam, from, to, color, 1, counterLabel(unit(a.unit))));
+          if (a.second) overlay.push(() => drawFire(ctx, app.cam, from, a.second, color, 1, counterLabel(unit(a.unit))));
           return;
         }
         const path = a.type === 'move' ? [a.to] : a.path;

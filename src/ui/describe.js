@@ -3,7 +3,7 @@
 
 import { validateAction } from '../sim/actions.js';
 import { assaultSolution, assaultVia } from '../sim/assault.js';
-import { fireSolution, pinAt } from '../sim/combat.js';
+import { fireSolution, fireSolutions, pinAt } from '../sim/combat.js';
 import { chanceAtLeast } from '../sim/dice.js';
 import { key } from '../sim/hex.js';
 import { lineOfSight } from '../sim/los.js';
@@ -67,8 +67,7 @@ function modText(f, sol) {
 // The fire preview: dice, target number with its reasons, and the exact odds.
 // On a hex with no spotted enemy nothing about who may be there is used
 // beyond the map: the odds are for a full team that is not suppressed.
-export function firePreview(state, u, h) {
-  const sol = fireSolution(state, u, h);
+export function firePreview(state, u, h, sol = fireSolution(state, u, h)) {
   if (!sol.ok) return `${u.team}: cannot fire there, ${sol.reason}.`;
   const t = sol.aimed ? state.units[sol.target] : null;
   const odds = fireOdds({
@@ -121,8 +120,11 @@ export function previewAction(state, action) {
       const end = action.path[action.path.length - 1];
       return `${u.team} fast moves ${action.path.length} hex${action.path.length > 1 ? 'es' : ''} to ${where(end)}. Exposed until its next turn: easier to spot and to hit.${exposureNote(state, u, end, true)}`;
     }
-    case 'fire':
-      return firePreview(state, u, action.target);
+    case 'fire': {
+      if (!action.second) return firePreview(state, u, action.target);
+      const [a, b] = fireSolutions(state, u, action);
+      return `Split fire. ${firePreview(state, u, action.target, a)} ${firePreview(state, u, action.second, b).replace(`${u.team} `, 'And ')}`;
+    }
     case 'pass':
       return `${u.team} ${holdWord(state)}.`;
     default:

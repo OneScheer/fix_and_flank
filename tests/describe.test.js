@@ -103,3 +103,10 @@ test('whether the enemy can act in its phase is not shown to the player', () => 
   assert.equal(eventText(null, e, 'BLUFOR'), 'Enemy action phase (OPFOR).');
   assert.equal(eventText(null, { ...e, side: 'BLUFOR', name: 'firefight' }, 'BLUFOR'), 'Firefight phase (BLUFOR): nobody can act.');
 });
+
+test('the split fire preview gives both halves with their own dice and odds', () => {
+  const s = toPhase(makeState(open(8, 6), [unit('OPFOR', 'ALPHA', 3, 1), unit('BLUFOR', 'ALPHA', 3, 5), unit('BLUFOR', 'BRAVO', 6, 2)]), 'enemy action');
+  const line = previewAction(s, { type: 'fire', unit: 0, target: H(3, 5), second: H(6, 2) });
+  assert.match(line, /^Split fire\. ALPHA fires on BLUFOR ALPHA at 3,5 \(open\): 3 dice, hit on 5\+/);
+  assert.match(line, /And fires on BLUFOR BRAVO at 6,2 \(open\): 2 dice/);
+});

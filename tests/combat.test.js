@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyAction, validateAction } from '../src/sim/actions.js';
 import { assaultVia } from '../src/sim/assault.js';
-import { fireDice, fireSolution, pinAt } from '../src/sim/combat.js';
+import { fireDice, fireSolution, fireSolutions, pinAt } from '../src/sim/combat.js';
 import { fireOdds } from '../src/sim/odds.js';
 import { commitOrders } from '../src/sim/orders.js';
 import { createRng } from '../src/sim/rng.js';
@@ -261,4 +261,39 @@ test('fire replays identically', () => {
     return { units: s.units, log };
   };
   assert.deepEqual(play(), play());
+});
+
+// ---- split fire (OPFOR only) ----
+
+// OPFOR ALPHA (0) at 3,1 with two BLUFOR teams in the open, in its enemy action phase.
+function opforFacingTwo(extra = []) {
+  return toPhase(makeState(open(8, 8), [
+    unit('OPFOR', 'ALPHA', 3, 1), unit('BLUFOR', 'ALPHA', 3, 5), unit('BLUFOR', 'BRAVO', 6, 4), ...extra,
+  ]), 'enemy action');
+}
+
+test('split fire: two hexes, the dice divided (larger half first), each rolled at its own TN', () => {
+  const s = opforFacingTwo();
+  const a = { type: 'fire', unit: 0, target: H(3, 5), second: H(6, 4) };
+  assert.equal(validateAction(s, a).ok, true);
+  const [x, y] = fireSolutions(s, s.units[0], a);
+  assert.deepEqual([x.dice, y.dice], [3, 2]);
+  const r = act(s, a);
+  const fires = r.events.filter((e) => e.type === 'fire');
+  assert.equal(fires.length, 2);
+  assert.ok(fires.every((e) => e.split));
+  assert.deepEqual(fires.map((e) => e.dice.length), [3, 2]);
+});
+
+test('split fire is for OPFOR only: BLUFOR cannot split', () => {
+  const s = inOpen();
+  assert.match(validateAction(s, { type: 'fire', unit: 0, target: H(3, 2), second: H(4, 1) }).reason, /BLUFOR cannot split its fire/);
+});
+
+test('split fire is refused with an enemy next to the shooter, on the same hex twice, or into an assault', () => {
+  const near = opforFacingTwo([unit('BLUFOR', 'CHARLIE', 3, 2)]);
+  assert.match(validateAction(near, { type: 'fire', unit: 0, target: H(3, 5), second: H(6, 4) }).reason, /enemy next to it/);
+  assert.match(validateAction(near, { type: 'fire', unit: 0, target: H(3, 2), second: H(3, 5) }).reason, /cannot assault with split fire/);
+  const s = opforFacingTwo();
+  assert.match(validateAction(s, { type: 'fire', unit: 0, target: H(3, 5), second: H(3, 5) }).reason, /two different hexes/);
 });

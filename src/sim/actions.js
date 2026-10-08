@@ -3,7 +3,9 @@
 // { type: 'move', unit, to: {col, row} }           1 hex
 // { type: 'fastMove', unit, path: [{col, row}, ...] }  up to fastMoveHexes;
 //                                                   entering rough terrain ends it
-// { type: 'fire', unit, target: {col, row} }      fire at a hex (see combat.js)
+// { type: 'fire', unit, target: {col, row}, second? }  fire at a hex (see combat.js);
+//                                                   with `second`, split fire: the dice
+//                                                   divided between two hexes
 //   A move or fire order into the next hex with an enemy in it is an
 //   assault (see assault.js).
 // { type: 'pass', unit }                           holds
@@ -15,7 +17,7 @@
 // next phase starts.
 
 import { assaultSolution, assaultVia, resolveAssault } from './assault.js';
-import { fireSolution, resolveFire } from './combat.js';
+import { fireSolutions, resolveFire } from './combat.js';
 import { adjacent, key, neighbors } from './hex.js';
 import { inBounds, terrainName, terrainOf } from './map.js';
 import { eliminationResult, endGame } from './mission.js';
@@ -56,6 +58,7 @@ export function validateAction(state, action) {
     const may = mayFire(unit);
     if (!may.ok) return may;
   }
+  if (via && action.second) return { ok: false, reason: 'cannot assault with split fire' };
   if (via) {
     const sol = assaultSolution(state, unit, via === 'move' ? action.to : action.target);
     return sol.ok ? { ok: true } : { ok: false, reason: sol.reason };
@@ -63,8 +66,9 @@ export function validateAction(state, action) {
   if (action.type === 'fire') {
     const may = mayFire(unit);
     if (!may.ok) return may;
-    const sol = fireSolution(state, unit, action.target);
-    return sol.ok ? { ok: true } : { ok: false, reason: sol.reason };
+    if (action.second && assaultVia(state, { type: 'fire', unit: unit.id, target: action.second })) return { ok: false, reason: 'cannot assault with split fire' };
+    const bad = fireSolutions(state, unit, action).find((sol) => !sol.ok);
+    return bad ? { ok: false, reason: bad.reason } : { ok: true };
   }
   if (isSuppressed(unit)) return { ok: false, reason: `${unit.team} is ${unit.status} and cannot move` };
   if (action.type === 'fastMove' && !unitType(state.balance, unit).fastMove) return { ok: false, reason: `the ${unitType(state.balance, unit).name} cannot fast move` };
@@ -141,7 +145,7 @@ export function applyAction(state, action, rng) {
     if (action.type === 'fastMove') unit.exposed = true;
   }
   if (!via && action.type === 'fire') {
-    events.push(resolveFire(next, unit, fireSolution(next, unit, action.target), rng));
+    for (const sol of fireSolutions(next, unit, action)) events.push({ ...resolveFire(next, unit, sol, rng), split: !!action.second });
     unit.fired = true;
     // Counted down at the start of each of its side's turns: fireEveryTurns 2 (the HMG) = every other turn.
     unit.reload = unitType(next.balance, unit).fireEveryTurns;

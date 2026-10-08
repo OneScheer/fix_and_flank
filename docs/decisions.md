@@ -232,3 +232,11 @@ Answers to the follow-up questions:
 - **Bang markers:** a starburst on the hex fired on when the shot starts, and a second one as the dice settle if there were hits; an assault always gets two. The dashed line of fire stays up while the dice roll.
 - **Fog:** only rolls the player could see are played (the same rule as the log); an unseen enemy's moves are not animated and do not add waiting time.
 - The panel is locked while a commit plays back. A rifle team's "reloading" (a by-product of the HMG's fire rate: every unit reloads until its side's next turn) is not shown; only a unit that still cannot fire on its next turn is tagged "reloading".
+
+## Split fire for OPFOR (user request)
+
+- **Rule:** an OPFOR team with no BLUFOR unit in a hex next to it may divide its dice between two different hexes in one fire order (`second` on the action). The first target gets the larger half (a full team: 3 and 2); each half rolls at its own target number, plus `fire.splitMod` (0 for now). It cannot be combined with an assault.
+- **OPFOR only, at the user's request** (`fire.splitSides: ["OPFOR"]`): a deliberate exception to "the AI plays by the player's rules". It models the defender's fire discipline (one team covering two approaches) without giving the player another order to manage. A first version also gave BLUFOR split fire with Shift+click; the user asked for OPFOR only and that was removed.
+- **AI:** the ENGAGED mode compares the best single target with the best pair (both orders), scoring each half as expected casualties + `pinWeight` x pin chance + `suppressWeight` (2) x chance to suppress (half for a target already suppressed). Switch: `ai.splitFire`.
+- **Balance:** unchanged on mission 1 (frontal 0.0%, fix and flank 74.5%): there the flanking team stays hidden until it is next to the trench, and then the trench may not split. It will matter on missions where two BLUFOR elements are seen at once from a distance.
+- The playback shows a split as two shots in a row, each with its own dice and bangs; the log has a line for each.

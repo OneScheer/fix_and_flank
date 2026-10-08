@@ -34,7 +34,9 @@ export function rangeMod(balance, range, shooter = { kind: 'team', type: null })
 // `target` is the unit that would be hit (it may be unseen: never show it
 // to the shooter's side unless `aimed`). The preview and the sim both use
 // this, so the odds shown are the odds rolled.
-export function fireSolution(state, shooter, hex) {
+// opts.dice: roll this many dice instead of the whole team (split fire);
+// opts.split: add fire.splitMod to the TN.
+export function fireSolution(state, shooter, hex, opts = {}) {
   const { balance, map } = state;
   const f = balance.fire;
   if (!hex || !inBounds(map, hex)) return { ok: false, reason: 'off the map' };
@@ -60,9 +62,33 @@ export function fireSolution(state, shooter, hex) {
   if (aimed && target.exposed) mods.push({ why: 'target exposed', mod: f.exposedMod });
   if (isSuppressed(shooter)) mods.push({ why: 'shooter suppressed', mod: f.suppressedShooterMod });
   if (!aimed) mods.push({ why: 'no spotted enemy: suppressive fire', mod: f.blindMod });
+  if (opts.split && f.splitMod) mods.push({ why: 'split fire', mod: f.splitMod });
   const rawTn = mods.reduce((t, m) => t + m.mod, f.baseTn);
   const tn = Math.min(f.maxTn, Math.max(f.minTn, rawTn));
-  return { ok: true, hex: { ...hex }, range, dice: fireDice(balance, shooter), tn, rawTn, mods, cover, aimed, target: target?.id ?? null };
+  return { ok: true, hex: { ...hex }, range, dice: opts.dice ?? fireDice(balance, shooter), tn, rawTn, mods, cover, aimed, target: target?.id ?? null };
+}
+
+// Split fire: a team of a side in fire.splitSides (OPFOR: the enemy's fire
+// discipline, at the user's request; the player cannot) with no enemy in a
+// hex next to it may divide its dice between two different hexes; the first
+// target gets the larger half.
+// Returns { ok, reason } or { ok: true, dice: [first, second] }.
+export function splitFire(state, shooter, first, second) {
+  if (!(state.balance.fire.splitSides ?? []).includes(shooter.side)) return { ok: false, reason: `${shooter.side} cannot split its fire` };
+  const enemyNext = state.units.some((u) => u.side !== shooter.side && u.status !== 'eliminated' && distance(u.pos, shooter.pos) === 1);
+  if (enemyNext) return { ok: false, reason: `${shooter.team} has an enemy next to it and cannot split its fire` };
+  if (same(first, second)) return { ok: false, reason: 'split fire needs two different hexes' };
+  const n = fireDice(state.balance, shooter);
+  if (n < 2) return { ok: false, reason: `${shooter.team} has too few dice to split` };
+  return { ok: true, dice: [Math.ceil(n / 2), Math.floor(n / 2)] };
+}
+
+// The solutions for a fire order: one target, or two for split fire.
+export function fireSolutions(state, shooter, action) {
+  if (!action.second) return [fireSolution(state, shooter, action.target)];
+  const split = splitFire(state, shooter, action.target, action.second);
+  if (!split.ok) return [split];
+  return [action.target, action.second].map((h, i) => fireSolution(state, shooter, h, { dice: split.dice[i], split: true }));
 }
 
 // Hits needed to pin a unit with this status.
