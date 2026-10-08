@@ -82,3 +82,16 @@ test('mission 1 loads with its mission and drills', () => {
   assert.equal(s.units.filter((u) => u.side === 'OPFOR').length, 1);
   assert.ok(json.drills.frontal && json.drills.fixAndFlank);
 });
+
+test('with nobody able to act, the turns still run out to the mission\'s end', () => {
+  // BLUFOR's only team pinned next to an enemy (it cannot rally there); OPFOR pinned too.
+  const s = missionState([unit('BLUFOR', 'ALPHA', 2, 2), unit('OPFOR', 'ALPHA', 3, 2)], { mission: { ...MISSION, turns: 6 } });
+  s.units[0].status = 'pinned';
+  s.units[1].status = 'pinned';
+  let t = s;
+  for (let i = 0; i < 40 && !t.result; i++) {
+    t.units.forEach((u) => { u.status = 'pinned'; }); // keep everyone down
+    t = commit(t).state;
+  }
+  assert.deepEqual(t.result, { winner: 'OPFOR', why: 'BLUFOR did not take the objective in 6 turns' });
+});

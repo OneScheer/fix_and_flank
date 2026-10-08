@@ -102,7 +102,8 @@ export function moveOptions(state, unit) {
     for (const n of neighborsInBounds(state, from)) {
       if (path.some((p) => p.col === n.col && p.row === n.row) || (n.col === unit.pos.col && n.row === unit.pos.row)) continue;
       const next = [...path, n];
-      if (path.length === 0 && ok(next, 'move')) moves.push(n);
+      // Plain moves only: a move into an enemy hex is an assault, offered separately.
+      if (path.length === 0 && ok(next, 'move') && !assaultVia(state, { type: 'move', unit: unit.id, to: n })) moves.push(n);
       if (!ok(next, 'fastMove')) continue;
       if (!fast.has(key(n))) fast.set(key(n), next);
       frontier.push(next);

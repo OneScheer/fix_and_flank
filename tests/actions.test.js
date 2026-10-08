@@ -307,3 +307,11 @@ test('the phases replay identically from the same seed', () => {
   };
   assert.deepEqual(play(), play());
 });
+
+test('move options list plain moves only: an enemy hex next door is an assault, not a move', () => {
+  const s = makeState(open(5, 4), [unit('BLUFOR', 'ALPHA', 1, 1), unit('OPFOR', 'ALPHA', 2, 1)]);
+  const o = moveOptions(s, s.units[0]);
+  assert.ok(!o.moves.some((h) => h.col === 2 && h.row === 1));
+  assert.ok(![...o.fast.values()].some((p) => p.some((h) => h.col === 2 && h.row === 1)));
+  assert.equal(validateAction(s, move(0, 2, 1)).ok, true, 'the assault itself is still a valid order');
+});

@@ -97,8 +97,10 @@ function enterPhase(state, rng, events) {
 export function advance(state, rng, events) {
   if (state.result || state.units.some((u) => canActivate(state, u))) return;
   const phases = state.balance.turn.phases;
-  // Two full turns without anyone able to act: nothing more will happen.
-  for (let i = 0; i < phases.length * 2; i++) {
+  // Nobody able to act: the clock still runs to a mission's last turn (which
+  // ends it); without a mission, stop after two empty turns.
+  const turnsLeft = state.map.mission ? state.map.mission.turns - state.turn + 1 : 2;
+  for (let i = 0; i < phases.length * Math.max(2, turnsLeft); i++) {
     if (state.phase + 1 < phases.length) {
       state.phase += 1;
     } else {

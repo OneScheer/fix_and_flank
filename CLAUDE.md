@@ -90,7 +90,7 @@ A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (defa
 
 The **squad leader (SL)** is a counter of one man. He moves and fires like a team and may share a hex with one fireteam. He has no rally order: his position drives the **rally phase** (below).
 
-The **HMG team** (`type: "hmg"`, numbers in `balance.unitTypes.hmg`) is the squad's third element: a crew of three (gunner, assistant gunner, ammo bearer; gunner lost last) firing 6 dice, no range penalty to 6 hexes and +1 to 12. It moves one hex at a time (no fast move), never assaults, and fires only every other turn (`fireEveryTurns` 2: barrel change and reloading). A base-of-fire weapon.
+The **HMG team** (`type: "hmg"`, numbers in `balance.unitTypes.hmg`) is the squad's third element: a crew of three (gunner, assistant gunner, ammo bearer; gunner lost last) firing 6 dice, no range penalty to 6 hexes and +1 to 12. It moves one hex at a time (no fast move), never assaults, and fires only every other turn (`fireEveryTurns` 2: barrel change and reloading). A base-of-fire weapon. Kept for more difficult missions; not in mission 1.
 
 Status: **ok**, **suppressed** (cannot move, can still fire), **pinned** (cannot move and cannot shoot back), eliminated.
 
