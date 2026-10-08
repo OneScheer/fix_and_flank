@@ -31,6 +31,23 @@
   "movement": {
     "fastMoveHexes": 2
   },
+  "fire": {
+    "baseTn": 4,
+    "minTn": 2,
+    "maxTn": 6,
+    "maxRangeHexes": 10,
+    "diceByRole": { "TL": 1, "AR": 2, "GRN": 1, "RFL": 1, "SL": 1 },
+    "range": [
+      { "upTo": 3, "mod": 0 },
+      { "upTo": 6, "mod": 1 },
+      { "upTo": 10, "mod": 2 }
+    ],
+    "coverMod": { "4": 0, "5": 1, "6": 2 },
+    "exposedMod": -1,
+    "suppressedShooterMod": 1,
+    "blindMod": 2,
+    "pinHits": 2
+  },
   "rally": {
     "worstOn": 6
   },

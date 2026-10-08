@@ -93,12 +93,11 @@ export function betterStatus(status) {
   return status === 'pinned' ? 'suppressed' : 'ok';
 }
 
-// Fire rules start in milestone 4; these two are fixed already: a unit that
-// moved this turn cannot fire, and a pinned unit cannot shoot back.
+// A unit that moved this turn cannot fire, and a pinned unit cannot shoot back.
 export function mayFire(unit) {
   if (unit.status === 'eliminated') return { ok: false, reason: `${unit.team} is eliminated` };
   if (unit.status === 'pinned') return { ok: false, reason: `${unit.team} is pinned and cannot fire` };
-  if (unit.moved) return { ok: false, reason: `${unit.team} moved this turn and cannot fire until next turn` };
+  if (unit.moved) return { ok: false, reason: `${unit.team} moved this turn and cannot fire` };
   return { ok: true };
 }
 

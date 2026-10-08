@@ -15,12 +15,12 @@ export const LEGEND = {
   '.': 'open', '=': 'road', ':': 'scrub', 'T': 'woods', '%': 'rubble', 'B': 'building', 'n': 'trench', '~': 'water',
 };
 
-export function makeMap(rows, units = []) {
-  return parseMap({ width: rows[0].length, height: rows.length, legend: LEGEND, rows, units }, balance);
+export function makeMap(rows, units = [], hexsides = []) {
+  return parseMap({ width: rows[0].length, height: rows.length, legend: LEGEND, rows, units, hexsides }, balance);
 }
 
-export function makeState(rows, units = [], seed = 1) {
-  return createState({ balance, map: makeMap(rows, units), seed });
+export function makeState(rows, units = [], seed = 1, hexsides = []) {
+  return createState({ balance, map: makeMap(rows, units, hexsides), seed });
 }
 
 export function trainingState(seed = 1) {

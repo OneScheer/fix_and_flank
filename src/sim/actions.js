@@ -3,6 +3,7 @@
 // { type: 'move', unit, to: {col, row} }           1 hex
 // { type: 'fastMove', unit, path: [{col, row}, ...] }  up to fastMoveHexes;
 //                                                   entering rough terrain ends it
+// { type: 'fire', unit, target: {col, row} }      fire at a hex (see combat.js)
 // { type: 'pass', unit }                           holds
 //
 // Only the current phase's side acts, and only with the phase's actions
@@ -11,14 +12,15 @@
 // units and commits them (see orders.js); when nobody is left to act, the
 // next phase starts.
 
+import { fireSolution, resolveFire } from './combat.js';
 import { adjacent, key, neighbors } from './hex.js';
 import { inBounds, terrainName, terrainOf } from './map.js';
 import { advance } from './phases.js';
 import { updateContacts } from './spotting.js';
-import { canActivate, cloneState, currentPhase, isActive, isSuppressed, unitsAt } from './state.js';
+import { canActivate, cloneState, currentPhase, isActive, isSuppressed, mayFire, unitsAt } from './state.js';
 
-export const ACTION_TYPES = ['move', 'fastMove', 'pass'];
-const ACTION_NAMES = { move: 'moving', fastMove: 'fast moving' };
+export const ACTION_TYPES = ['move', 'fastMove', 'fire', 'pass'];
+const ACTION_NAMES = { move: 'moving', fastMove: 'fast moving', fire: 'firing' };
 
 function enterable(state, h, unit) {
   if (!inBounds(state.map, h)) return 'off the map';
@@ -43,6 +45,12 @@ export function validateAction(state, action) {
   if (action.type === 'pass') return { ok: true };
   if (!(phase.actions ?? []).includes(action.type)) return { ok: false, reason: `no ${ACTION_NAMES[action.type]} in the ${phase.name} phase` };
 
+  if (action.type === 'fire') {
+    const may = mayFire(unit);
+    if (!may.ok) return may;
+    const sol = fireSolution(state, unit, action.target);
+    return sol.ok ? { ok: true } : { ok: false, reason: sol.reason };
+  }
   if (isSuppressed(unit)) return { ok: false, reason: `${unit.team} is ${unit.status} and cannot move` };
   const path = action.type === 'move' ? [action.to] : action.path;
   if (!Array.isArray(path) || path.length === 0) return { ok: false, reason: 'no destination' };
@@ -108,6 +116,10 @@ export function applyAction(state, action, rng) {
     }
     unit.moved = true;
     if (action.type === 'fastMove') unit.exposed = true;
+  }
+  if (action.type === 'fire') {
+    events.push(resolveFire(next, unit, fireSolution(next, unit, action.target), rng));
+    unit.fired = true;
   }
   unit.activated = true;
   updateContacts(next, events);
