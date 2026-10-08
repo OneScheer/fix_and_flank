@@ -72,7 +72,7 @@ test('every factor is exposed, and the chance is their clamped product', () => {
   const s = dugIn();
   const h = hitChance(s, at(s, 1, 40, 20), s.soldiers[2]);
   assert.deepEqual(Object.keys(h.factors).sort(),
-    ['base', 'cover', 'movement', 'optic', 'shooterStance', 'suppression', 'targetStance', 'wounded']);
+    ['base', 'cover', 'fireMode', 'movement', 'optic', 'shooterStance', 'suppression', 'targetStance', 'wounded']);
   const product = Object.values(h.factors).reduce((a, b) => a * b, 1);
   assert.equal(h.chance, Math.min(balance.combat.maxHit, Math.max(balance.combat.minHit, product)));
 });

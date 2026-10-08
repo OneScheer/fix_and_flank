@@ -99,7 +99,10 @@ function describe(tile) {
 //   partial: true if the line only just clears a low obstacle (target partly hidden),
 //   rangeM,
 // }
-export function lineOfSight(map, balance, a, b) {
+//
+// With { ignoreConcealment: true } it is a line of fire: only height blocks,
+// because bullets go through bushes (concealment is still totalled).
+export function lineOfSight(map, balance, a, b, { ignoreConcealment = false } = {}) {
   const vision = balance.vision;
   const rangeM = distanceTiles(a.pos, b.pos) * balance.map.tileMeters;
   const base = { clear: false, blockedAt: null, concealment: 0, partial: false, rangeM };
@@ -127,7 +130,7 @@ export function lineOfSight(map, balance, a, b) {
     }
     minMargin = Math.min(minMargin, effect.margin);
     concealment += effect.concealment;
-    if (concealment >= vision.blockingConcealment - EPS) {
+    if (!ignoreConcealment && concealment >= vision.blockingConcealment - EPS) {
       return {
         ...base,
         concealment,

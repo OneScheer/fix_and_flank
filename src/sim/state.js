@@ -7,9 +7,11 @@
 //   contacts: { [side]: { [enemyId]: { level, pos, lastSeenSec } } }  (see spotting.js)
 //   soldiers: [{
 //     id, side, team, role, pos: {x, y}, stance, suppression, status, hp,
-//     weapon, ammo, fireCooldown (s), lastFiredSec, underFireUntilSec,
+//     weapon, ammo, grenades: { hand, 40mm }, fireCooldown (s), lastFiredSec, underFireUntilSec,
 //     move: null | { dest, speed, path: [{x, y}], i, progress, blocked },
+//     task: null (fire at will) | { type: 'fire' | 'suppress' | 'overwatch' | 'assault' | 'grenade', ... },
 //   }],
+//   grenades: [{ by, side, kind, aim, at, landsAtSec }]   in flight
 // }
 //
 // Soldiers are stored in id order. Everything except balance and map is
@@ -41,10 +43,12 @@ export function createState({ balance, weapons, map, seed }) {
       hp: balance.soldier.hp,
       weapon,
       ammo: weapons.weapons[weapon].ammo,
+      grenades: { ...(weapons.roleGrenades?.[u.role] ?? weapons.defaultGrenades ?? {}) },
       fireCooldown: 0,
       lastFiredSec: null,
       underFireUntilSec: null,
       move: null,
+      task: null,
     };
   });
   const contacts = {};
@@ -61,12 +65,18 @@ export function createState({ balance, weapons, map, seed }) {
     map,
     soldiers,
     contacts,
+    grenades: [],
   };
 }
 
 // Copy everything a step may change. balance and map stay shared.
 export function cloneState(state) {
-  return { ...state, soldiers: structuredClone(state.soldiers), contacts: structuredClone(state.contacts) };
+  return {
+    ...state,
+    soldiers: structuredClone(state.soldiers),
+    contacts: structuredClone(state.contacts),
+    grenades: structuredClone(state.grenades ?? []),
+  };
 }
 
 export function isOnMap(soldier) {
@@ -80,6 +90,11 @@ export function canMove(soldier) {
 
 export function teamMembers(state, side, team) {
   return state.soldiers.filter((s) => s.side === side && s.team === team && canMove(s));
+}
+
+// Soldiers of a team who can still act (fire, change stance), pinned included.
+export function teamActive(state, side, team) {
+  return state.soldiers.filter((s) => s.side === side && s.team === team && s.status !== 'down' && s.status !== 'dead');
 }
 
 export function teamsOf(state, side) {

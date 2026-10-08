@@ -1,16 +1,24 @@
 // Hit chance, firing, suppression and damage.
 //
 // hit = base(weapon, range) x shooter stance x target stance x movement
-//     x cover (directional) x suppression x wounded x optic
+//     x cover (directional) x suppression x wounded x optic x fire mode
 // clamped to [minHit, maxHit]. Every factor is returned for the preview
 // and the after-action replay.
 //
-// Until player fire orders exist (Milestone 5), every soldier fires at will
-// at the best spotted target it has line of sight to. Fire within a tick is
-// simultaneous: all shots are chosen from the state before anyone fires,
-// then resolved in soldier id order.
+// What a soldier shoots at depends on his team's order (soldier.task):
+//   none / move / hold   fire at will: the spotted enemy with the best chance
+//   fire                 aimed fire on one spotted contact (else fire at will)
+//   overwatch            fire at will, but only inside the arc, more accurate
+//   suppress             area fire at a point: needs a line of fire only,
+//                        faster and less accurate, can hit exposed soldiers
+//                        near the point, suppresses everyone near it
+//   assault              fire on the move; close assault anyone within reach
+//   grenade              the thrower throws (grenade.js)
+// Fire within a tick is simultaneous: all actions are chosen from the state
+// before anyone acts, then resolved in soldier id order.
 
 import { coverFrom } from './cover.js';
+import { canLaunch, launchGrenade, resolveGrenades } from './grenade.js';
 import { tileAt, inBounds } from './map.js';
 import { lineOfSight } from './los.js';
 import { DIRS } from './path.js';
@@ -55,7 +63,8 @@ export function canFire(soldier) {
 }
 
 // movement: 'still' | 'walk' | 'run' | 'crawl' (how the shooter moved this tick).
-export function hitChance(state, shooter, target, { los, movement = 'still' } = {}) {
+// mode: a key of balance.orders.fireMode ('aimed', 'overwatch', 'suppress', 'suppressUnseen').
+export function hitChance(state, shooter, target, { los, movement = 'still', mode = 'aimed' } = {}) {
   const { balance, map } = state;
   const c = balance.combat;
   const weapon = weaponOf(state, shooter);
@@ -70,6 +79,7 @@ export function hitChance(state, shooter, target, { los, movement = 'still' } = 
     suppression: c.suppressionAccuracy[suppressionLevel(balance, shooter)],
     wounded: shooter.hp < balance.soldier.hp ? c.woundedAccuracy : 1,
     optic: weapon.opticFactor,
+    fireMode: balance.orders.fireMode[mode],
   };
   let chance = 0;
   let reason = null;
@@ -83,14 +93,25 @@ export function hitChance(state, shooter, target, { los, movement = 'still' } = 
   return { chance, factors, cover, rangeM: sight.rangeM, reason };
 }
 
+// Is `p` inside the overwatch arc of soldier s (centered on s -> toward)?
+export function inArc(state, s, toward, p) {
+  const a = Math.atan2(toward.y - s.pos.y, toward.x - s.pos.x);
+  const b = Math.atan2(p.y - s.pos.y, p.x - s.pos.x);
+  let d = Math.abs(a - b) % (2 * Math.PI);
+  if (d > Math.PI) d = 2 * Math.PI - d;
+  return d <= (state.balance.orders.overwatch.arcDeg * Math.PI) / 360 + 1e-9;
+}
+
 // Best spotted target with line of sight: highest hit chance, then nearest, then lowest id.
-export function chooseTarget(state, shooter, movement) {
+// filter(enemy) can restrict the candidates (overwatch arc, a fire order's target).
+export function chooseTarget(state, shooter, movement, { mode = 'aimed', filter = null } = {}) {
   const contacts = state.contacts[shooter.side] ?? {};
   let best = null;
   for (const enemy of state.soldiers) {
     if (enemy.side === shooter.side || contacts[enemy.id]?.level !== 'spotted') continue;
     if (enemy.status === 'down' || enemy.status === 'dead') continue;
-    const h = hitChance(state, shooter, enemy, { movement });
+    if (filter && !filter(enemy)) continue;
+    const h = hitChance(state, shooter, enemy, { movement, mode });
     if (h.chance <= 0) continue;
     if (!best || h.chance > best.chance || (h.chance === best.chance && h.rangeM < best.rangeM)) {
       best = { target: enemy, ...h };
@@ -113,15 +134,15 @@ export function inCover(state, soldier) {
   });
 }
 
-// Rounds passing near soldiers suppress them, hit or miss. The target takes
-// the full amount; others on its side within nearMissRadiusTiles take less
+// Rounds passing near soldiers suppress them, hit or miss. Soldiers of `side`
+// at `center` take the full amount; within nearMissRadiusTiles they take less
 // the further they are. Returns [{ id, amount }].
-function applySuppression(state, target, amount, now) {
+function applySuppression(state, side, center, amount, now) {
   const s = state.balance.suppression;
   const out = [];
   for (const e of state.soldiers) {
-    if (e.side !== target.side || e.status === 'dead') continue;
-    const d = Math.hypot(e.pos.x - target.pos.x, e.pos.y - target.pos.y);
+    if (e.side !== side || e.status === 'dead') continue;
+    const d = Math.hypot(e.pos.x - center.x, e.pos.y - center.y);
     if (d > s.nearMissRadiusTiles) continue;
     const add = amount * (1 - d / (s.nearMissRadiusTiles + 1));
     e.suppression = Math.min(s.max, e.suppression + add);
@@ -148,57 +169,202 @@ function muzzleFlash(state, shooter, now, events) {
   }
 }
 
+// Area fire for a suppress task: where to aim, whether there is a line of
+// fire, and which exposed enemy near the point (if any) the rounds can hit.
+// Returns { aim, lof, reason, target, chance, factors, cover, rangeM }.
+export function suppressShot(state, s, aim) {
+  const { map, balance } = state;
+  const o = balance.orders;
+  const weapon = weaponOf(state, s);
+  const lof = lineOfSight(map, balance, s, { pos: aim, stance: o.suppress.aimStance }, { ignoreConcealment: true });
+  let reason = null;
+  if (!lof.clear) reason = `no line of fire (${lof.reason})`;
+  else if (lof.rangeM > weapon.maxRangeM) reason = 'out of range';
+  const out = { aim, lof, reason, target: null, chance: 0, factors: null, cover: null, rangeM: lof.rangeM };
+  if (reason) return out;
+  let best = null;
+  for (const e of state.soldiers) {
+    if (e.side === s.side || e.status === 'down' || e.status === 'dead') continue;
+    const d = Math.hypot(e.pos.x - aim.x, e.pos.y - aim.y);
+    if (d > o.suppress.hitRadiusTiles) continue;
+    const los = lineOfSight(map, balance, s, e, { ignoreConcealment: true });
+    if (!los.clear) continue;
+    if (!best || d < best.d) best = { e, d, los };
+  }
+  if (best) {
+    const spotted = state.contacts[s.side]?.[best.e.id]?.level === 'spotted';
+    const h = hitChance(state, s, best.e, { los: best.los, mode: spotted ? 'suppress' : 'suppressUnseen' });
+    Object.assign(out, { target: best.e, chance: h.chance, factors: h.factors, cover: h.cover });
+  }
+  return out;
+}
+
+// Where a suppress task aims this tick: the contact's last known position if
+// it has one, else the ordered tile. Uses only what the side knows.
+export function suppressAim(state, s, task) {
+  const known = task.target !== null && task.target !== undefined ? state.contacts[s.side]?.[task.target] : null;
+  return known ? { ...known.pos } : { ...task.at };
+}
+
+// Close assault: the nearest enemy in reach with line of sight.
+export function closeAssaultTarget(state, s) {
+  const r = state.balance.orders.assault.rangeTiles;
+  let best = null;
+  for (const e of state.soldiers) {
+    if (e.side === s.side || e.status === 'down' || e.status === 'dead') continue;
+    const d = Math.hypot(e.pos.x - s.pos.x, e.pos.y - s.pos.y);
+    if (d > r + 1e-9) continue;
+    if (!lineOfSight(state.map, state.balance, s, e).clear) continue;
+    if (!best || d < best.d) best = { e, d };
+  }
+  return best?.e ?? null;
+}
+
+// Kill chance of a close assault: base x the better of the target's status
+// factor (pinned high, alert low) and its exposure from the attacker's side
+// (1 - directional cover) x the attacker's own suppression. So it is high
+// only on a pinned target or one caught from an open side.
+export function assaultChance(state, s, target) {
+  const a = state.balance.orders.assault;
+  const c = state.balance.combat;
+  const cover = coverFrom(state.map, state.balance, target, s.pos);
+  const factors = {
+    base: a.base,
+    targetStatus: a.statusFactor[target.status] ?? a.statusFactor.active,
+    exposure: 1 - cover.protection,
+    suppression: c.suppressionAccuracy[suppressionLevel(state.balance, s)],
+  };
+  const chance = Math.min(c.maxHit,
+    factors.base * Math.max(factors.targetStatus, factors.exposure) * factors.suppression);
+  return { chance, factors, cover };
+}
+
 // One tick of fire. movedSpeed: Map soldier id -> speed for soldiers that moved this tick.
 export function resolveFire(state, movedSpeed, rng, now, events) {
   const { balance, tickSec } = state;
 
-  // Phase 1: everyone picks a target from the same picture of the battle.
-  const shots = [];
+  // Phase 1: everyone decides from the same picture of the battle.
+  const actions = [];
   for (const s of state.soldiers) {
     s.fireCooldown = Math.max(0, s.fireCooldown - tickSec);
-    if (!canFire(s) || s.fireCooldown > 0) continue;
+    if (s.status === 'down' || s.status === 'dead' || s.fireCooldown > 0) continue;
+    const task = s.task;
     const movement = movedSpeed.get(s.id) ?? 'still';
-    const pick = chooseTarget(state, s, movement);
-    if (!pick) continue;
-    shots.push({ shooter: s, ...pick, rounds: Math.min(weaponOf(state, s).roundsPerBurst, s.ammo) });
+
+    if (task?.type === 'grenade') {
+      if (s.status !== 'pinned') actions.push({ kind: 'grenade', s });
+      continue;
+    }
+    if (task?.type === 'assault') {
+      const victim = closeAssaultTarget(state, s);
+      if (victim) {
+        actions.push({ kind: 'assault', s, target: victim, ...assaultChance(state, s, victim) });
+        continue;
+      }
+    }
+    if (s.ammo <= 0) continue;
+    const rounds = Math.min(weaponOf(state, s).roundsPerBurst, s.ammo);
+
+    if (task?.type === 'suppress') {
+      const aim = suppressAim(state, s, task);
+      task.at = aim;
+      const shot = suppressShot(state, s, aim);
+      if (shot.reason) {
+        if (task.noFire !== shot.reason) events.push({ type: 'no_fire', id: s.id, reason: shot.reason, at: aim });
+        task.noFire = shot.reason;
+        continue;
+      }
+      task.noFire = null;
+      actions.push({ kind: 'fire', mode: 'suppress', s, rounds, ...shot });
+      continue;
+    }
+
+    let pick = null;
+    if (task?.type === 'fire') {
+      pick = chooseTarget(state, s, movement, { filter: (e) => e.id === task.target });
+      pick ??= chooseTarget(state, s, movement);
+    } else if (task?.type === 'overwatch') {
+      pick = chooseTarget(state, s, movement, { mode: 'overwatch', filter: (e) => inArc(state, s, task.toward, e.pos) });
+    } else {
+      pick = chooseTarget(state, s, movement);
+    }
+    if (pick) actions.push({ kind: 'fire', mode: task?.type === 'overwatch' ? 'overwatch' : 'aimed', s, rounds, ...pick, aim: { ...pick.target.pos } });
   }
 
   // Phase 2: resolve in id order.
-  for (const shot of shots) {
-    const { shooter, target, rounds, chance } = shot;
-    const weapon = weaponOf(state, shooter);
-    shooter.ammo -= rounds;
-    const pinned = suppressionLevel(balance, shooter) === 'pinned';
-    shooter.fireCooldown = weapon.burstIntervalSec / (pinned ? balance.combat.pinnedFireRate : 1);
-    shooter.lastFiredSec = now;
+  for (const act of actions) {
+    const { s } = act;
+    if (act.kind === 'grenade') {
+      const { at, kind } = s.task;
+      const c = canLaunch(state, s, kind, at);
+      s.task = null;
+      if (!c.ok) {
+        events.push({ type: 'order_failed', id: s.id, reason: c.reason });
+        continue;
+      }
+      launchGrenade(state, s, kind, at, rng, now, events);
+      s.fireCooldown = balance.grenade.throwSec;
+      s.lastFiredSec = now;
+      muzzleFlash(state, s, now, events);
+      continue;
+    }
+    if (act.kind === 'assault') {
+      const { target, chance } = act;
+      const success = target.hp > 0 && rng.chance(chance);
+      if (success) {
+        target.hp = Math.max(0, target.hp - balance.orders.assault.damage);
+        events.push({ type: 'hit', id: target.id, by: s.id, damage: balance.orders.assault.damage, hp: target.hp, cause: 'assault' });
+      }
+      events.push({
+        type: 'assault', id: s.id, target: target.id, from: { ...s.pos }, at: { ...target.pos }, chance, success,
+        factors: act.factors, cover: { protection: act.cover.protection, direction: act.cover.direction.name, tile: act.cover.tile },
+      });
+      s.fireCooldown = balance.orders.assault.intervalSec;
+      s.lastFiredSec = now;
+      muzzleFlash(state, s, now, events);
+      continue;
+    }
+
+    const { target, rounds, chance, mode } = act;
+    const weapon = weaponOf(state, s);
+    s.ammo -= rounds;
+    const pinned = suppressionLevel(balance, s) === 'pinned';
+    const rate = (mode === 'suppress' ? balance.orders.suppress.rateFactor : 1) / (pinned ? balance.combat.pinnedFireRate : 1);
+    s.fireCooldown = weapon.burstIntervalSec * rate;
+    s.lastFiredSec = now;
 
     let hits = 0;
     for (let r = 0; r < rounds; r++) {
-      if (target.hp <= 0) break;
+      if (!target || target.hp <= 0) break;
       if (rng.chance(chance)) {
         hits++;
         target.hp = Math.max(0, target.hp - weapon.damage);
-        events.push({ type: 'hit', id: target.id, by: shooter.id, damage: weapon.damage, hp: target.hp });
+        events.push({ type: 'hit', id: target.id, by: s.id, damage: weapon.damage, hp: target.hp });
       }
     }
-    const suppressed = applySuppression(state, target, rounds * weapon.suppressionPerRound, now);
+    const enemySide = target?.side ?? state.soldiers.find((e) => e.side !== s.side)?.side;
+    const center = mode === 'suppress' ? act.aim : target.pos;
+    const suppressed = enemySide ? applySuppression(state, enemySide, center, rounds * weapon.suppressionPerRound, now) : [];
     events.push({
       type: 'fire',
-      id: shooter.id,
-      target: target.id,
-      from: { ...shooter.pos },
-      at: { ...target.pos },
+      mode,
+      id: s.id,
+      target: target ? target.id : null,
+      from: { ...s.pos },
+      at: { ...(mode === 'suppress' ? act.aim : target.pos) },
       rounds,
       hits,
       chance,
-      factors: shot.factors,
-      cover: { protection: shot.cover.protection, direction: shot.cover.direction.name, tile: shot.cover.tile },
-      rangeM: shot.rangeM,
+      factors: act.factors,
+      cover: act.cover ? { protection: act.cover.protection, direction: act.cover.direction.name, tile: act.cover.tile } : null,
+      rangeM: act.rangeM,
       suppressed,
     });
-    if (shooter.ammo === 0) events.push({ type: 'out_of_ammo', id: shooter.id });
-    muzzleFlash(state, shooter, now, events);
+    if (s.ammo === 0) events.push({ type: 'out_of_ammo', id: s.id });
+    muzzleFlash(state, s, now, events);
   }
+
+  resolveGrenades(state, rng, now, events);
 }
 
 // Suppression recovery and status changes, after fire.

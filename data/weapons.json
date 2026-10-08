@@ -23,6 +23,28 @@
       "opticFactor": 1.0
     }
   },
+  "grenades": {
+    "hand": {
+      "name": "hand grenade",
+      "minRangeM": 0,
+      "maxRangeM": 30,
+      "flightSec": 1.5,
+      "scatterTilesPer50M": 1,
+      "needsLineOfFire": false
+    },
+    "40mm": {
+      "name": "40 mm grenade",
+      "minRangeM": 30,
+      "maxRangeM": 150,
+      "speedMps": 76,
+      "scatterTilesPer50M": 1,
+      "needsLineOfFire": true
+    }
+  },
+  "roleGrenades": {
+    "GRN": { "hand": 2, "40mm": 8 }
+  },
+  "defaultGrenades": { "hand": 2 },
   "roleWeapons": {
     "AR": "lmg"
   },
