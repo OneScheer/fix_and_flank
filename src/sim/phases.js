@@ -14,6 +14,7 @@
 // are cleared.
 
 import { rollD6 } from './dice.js';
+import { endGame, turnEndResult } from './mission.js';
 import { distance, same } from './hex.js';
 import { betterStatus, canActivate, currentPhase, isActive, isSuppressed } from './state.js';
 
@@ -93,7 +94,7 @@ function enterPhase(state, rng, events) {
 // next phase that needs orders (rolling over into new turns as needed).
 // Mutates state (a fresh clone) and pushes events.
 export function advance(state, rng, events) {
-  if (state.units.some((u) => canActivate(state, u))) return;
+  if (state.result || state.units.some((u) => canActivate(state, u))) return;
   const phases = state.balance.turn.phases;
   // Two full turns without anyone able to act: nothing more will happen.
   for (let i = 0; i < phases.length * 2; i++) {
@@ -101,6 +102,11 @@ export function advance(state, rng, events) {
       state.phase += 1;
     } else {
       events.push({ type: 'turn_end', turn: state.turn });
+      const result = turnEndResult(state);
+      if (result) {
+        endGame(state, result, events);
+        return;
+      }
       state.turn += 1;
       state.phase = 0;
       events.push({ type: 'turn_start', turn: state.turn });

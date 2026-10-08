@@ -18,6 +18,7 @@ import { assaultSolution, assaultVia, resolveAssault } from './assault.js';
 import { fireSolution, resolveFire } from './combat.js';
 import { adjacent, key, neighbors } from './hex.js';
 import { inBounds, terrainName, terrainOf } from './map.js';
+import { eliminationResult, endGame } from './mission.js';
 import { advance } from './phases.js';
 import { updateContacts } from './spotting.js';
 import { canActivate, cloneState, currentPhase, isActive, isSuppressed, mayFire, unitsAt } from './state.js';
@@ -41,6 +42,7 @@ export function validateAction(state, action) {
   if (!ACTION_TYPES.includes(action?.type)) return { ok: false, reason: `unknown action '${action?.type}'` };
   const unit = state.units[action.unit];
   if (!unit) return { ok: false, reason: 'no such unit' };
+  if (state.result) return { ok: false, reason: 'the mission is over' };
   const phase = currentPhase(state);
   if (unit.side !== phase.side) return { ok: false, reason: `it is the ${phase.name} phase (${phase.side})` };
   if (!isActive(unit)) return { ok: false, reason: `${unit.team} is eliminated` };
@@ -142,6 +144,8 @@ export function applyAction(state, action, rng) {
   }
   unit.activated = true;
   updateContacts(next, events);
+  const over = eliminationResult(next);
+  if (over) endGame(next, over, events);
   advance(next, rng, events);
   updateContacts(next, events);
   next.rngState = rng.getState();

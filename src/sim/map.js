@@ -10,7 +10,7 @@
 import { SIDES, key, neighborOn, opposite } from './hex.js';
 
 export function parseMap(json, balance) {
-  const { name = 'Untitled', width, height, legend, rows, units = [], objective = null, hexsides = [] } = json;
+  const { name = 'Untitled', width, height, legend, rows, units = [], objective = null, hexsides = [], mission = null } = json;
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
     throw new Error(`Map size must be positive integers, got ${width} x ${height}`);
   }
@@ -27,7 +27,7 @@ export function parseMap(json, balance) {
       terrain.push(legend[c]);
     });
   });
-  const map = { name, width, height, terrain: Object.freeze(terrain), units: Object.freeze(units.map((u) => Object.freeze({ ...u }))), objective, sides: {} };
+  const map = { name, width, height, terrain: Object.freeze(terrain), units: Object.freeze(units.map((u) => Object.freeze({ ...u }))), objective, mission: mission ? Object.freeze({ ...mission }) : null, sides: {} };
 
   // sides: "col,row" -> { SIDE: feature }
   const put = (h, side, feature) => {

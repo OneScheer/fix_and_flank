@@ -20,6 +20,7 @@ import { updateContacts } from './spotting.js';
 //     fired,              fired (gives it away until its side's next turn; set by fire, milestone 4)
 //   }],
 //   contacts: { [side]: { [enemyId]: { level: 'spotted' | 'suspected', pos, turn } } }
+//   result: null, or { winner, why } once the mission is over (see mission.js)
 // }
 //
 // Units are stored in id order. Everything except balance and map is plain
@@ -49,6 +50,7 @@ export function createState({ balance, map, seed }) {
     map,
     units,
     contacts: Object.fromEntries((balance.turn.sides).map((side) => [side, {}])),
+    result: null,
   };
   updateContacts(state, []);
   return state;
@@ -75,7 +77,7 @@ export function canActIn(phase, unit) {
 
 // Still waiting for an order in the current phase.
 export function canActivate(state, unit) {
-  return !unit.activated && canActIn(currentPhase(state), unit);
+  return !state.result && !unit.activated && canActIn(currentPhase(state), unit);
 }
 
 export function unitsAt(state, h) {
