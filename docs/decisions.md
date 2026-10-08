@@ -106,3 +106,7 @@ Answers to the follow-up questions:
 - **Fast move:** a path of up to `movement.fastMoveHexes` (2) adjacent hexes; entering rough terrain ends it, so a rough hex can only be the last one. The team is exposed until its own next activation (or the end of the next turn's activation of it).
 - **Pinned teams** cannot move; they can still fire (milestone 4) or pass.
 - **OPFOR** passes on all its activations until fire (milestone 4) and the AI (milestone 6) exist.
+- **Squad leader (user request, same day):** an SL counter (`kind: "leader"`, one man) that can share a hex with one fireteam and has a **Rally** action: one suppressed or pinned friendly team within `rally.rangeHexes` (1: his hex or adjacent) rolls a d6, and on `rally.succeedOn` (3+) improves one step. Rally is the SL's activation; a pinned SL cannot rally. Only BLUFOR has an SL on the training map.
+- **Statuses (user request):** ok, **suppressed** (cannot move, can fire), **pinned** (cannot move, cannot fire). "Shaken" from the first version is gone.
+- **Recovery without the SL:** at the start of each turn every suppressed or pinned unit rolls a d6 and improves one step on `status.recoverOn` (5+). Kept so a team far from the SL is not stuck forever; the SL's 3+ is the reliable way.
+- **Stacking at start:** a map may start the SL in the same hex as a fireteam.

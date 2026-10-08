@@ -15,7 +15,7 @@ The first version (2 m tiles, real-time WEGO with 10 second turns, percentage hi
 1. **Fix and flank is the optimal strategy.** If a frontal assault is ever the best plan against an entrenched enemy, the balance is wrong.
 2. **Dice, but never hidden dice.** Combat is resolved with d6 rolls. Before committing, the player sees the target number, the dice and the odds. After, the player sees the actual rolls and why.
 3. **Turn-based, alternating activations.** Sides take turns activating one fireteam at a time until every fireteam has acted; then a new turn starts. Nothing moves while the player decides.
-4. **Small and readable.** A BLUFOR squad of two fireteams against a few OPFOR fireteams. Each counter is a fireteam. Three orders: Move, Fast move, Fire.
+4. **Small and readable.** A BLUFOR squad of two fireteams and a squad leader against a few OPFOR fireteams. Each counter is a fireteam (or the SL). Three orders: Move, Fast move, Fire; the SL can also Rally.
 5. **Real tactics, abstract presentation.** Correct doctrine and terminology, simple visuals (NATO-style counters, flat hexes). No made-up superweapons.
 
 ---
@@ -69,7 +69,7 @@ Rules for the simulation:
 - Each hex has one terrain type. The terrain table in `balance.json` gives each type: movement (normal, stops fast move, impassable), cover (a casualty roll number), concealment (hides units in it), and whether it blocks line of sight through it.
 - Terrain types: open, road, scrub, woods, rubble, building, trench (dug-in fighting positions), water.
 - **Cover and concealment are different.** Cover makes casualties less likely. Concealment hides a unit and, for woods and buildings, blocks sight through the hex.
-- Stacking: one fireteam per hex.
+- Stacking: one fireteam per hex, plus the squad leader.
 
 ---
 
@@ -77,13 +77,17 @@ Rules for the simulation:
 
 ### Units
 
-A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (default 4: TL, AR, GRN, RFL), status (ok, shaken, pinned, eliminated), activated this turn, exposed (fast moved). Casualties remove soldiers; the AR is lost last. A team with no soldiers left is eliminated.
+A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (default 4: TL, AR, GRN, RFL), status, activated this turn, exposed (fast moved). Casualties remove soldiers; the AR is lost last. A team with no soldiers left is eliminated.
+
+The **squad leader (SL)** is a counter of one man. He moves and fires like a team, may share a hex with one fireteam, and can **Rally**: a suppressed or pinned friendly team in his hex or next to it rolls a d6; on 3+ it improves one step. Rallying is his activation.
+
+Status: **ok**, **suppressed** (cannot move, can still fire), **pinned** (cannot move and cannot shoot back), eliminated.
 
 ### Turn and activations
 
 - Each turn, sides alternate activating one fireteam that has not yet acted, starting with BLUFOR. If one side has no fireteams left to activate, the other side activates its remaining ones in a row. When all have acted, the turn ends.
-- At the start of each turn, suppressed teams roll to recover.
-- An activation is one action: **Move**, **Fast move**, **Fire**, or pass.
+- At the start of each turn, every suppressed or pinned unit rolls a d6 and improves one step on 5+ (the SL's rally is the reliable way).
+- An activation is one action: **Move**, **Fast move**, **Fire**, **Rally** (SL only), or pass.
 
 ### Actions
 
@@ -96,14 +100,14 @@ A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (defa
 
 ### Fire
 
-- Target number (TN) on a d6, default 4+, modified by range, the target's cover, the target being exposed, the shooter being shaken or pinned, and firing at a hex with no spotted enemy. Clamped to 2+ .. 6+.
-- Each die at or above the TN is a hit. 1 hit: the target is shaken (already shaken: pinned). 2 or more hits: pinned.
+- Target number (TN) on a d6, default 4+, modified by range, the target's cover, the target being exposed, the shooter being suppressed, and firing at a hex with no spotted enemy. Clamped to 2+ .. 6+.
+- Each die at or above the TN is a hit. 1 hit: the target is suppressed (already suppressed: pinned). 2 or more hits: pinned.
 - Each hit gets a casualty roll against the target's cover (for example 4+ in the open, 6 in a trench). Each success removes a soldier.
-- Pinned teams cannot move and fire at worse odds. Shaken teams fire at slightly worse odds.
+- Suppressed teams cannot move and fire at worse odds. Pinned teams cannot move or fire.
 
 ### Assault
 
-Close combat when a team moves or fires into an adjacent enemy hex. Both sides roll a die per soldier at the same time; each success removes an enemy soldier. The attacker's TN depends on the defender's state (pinned easiest) and the defender's TN on the defender being dug in. If the defender is wiped out or ends with fewer soldiers than the attacker, it is eliminated and the attacker takes the hex; otherwise the attacker falls back pinned. Against an unsuppressed team in cover, an assault should be costly.
+Close combat when a team moves or fires into an adjacent enemy hex. Both sides roll a die per soldier at the same time (a pinned defender cannot shoot back); each success removes an enemy soldier. The attacker's TN depends on the defender's state (pinned easiest) and the defender's TN on the defender being dug in. If the defender is wiped out or ends with fewer soldiers than the attacker, it is eliminated and the attacker takes the hex; otherwise the attacker falls back pinned. Against an unsuppressed team in cover, an assault should be costly.
 
 ### Vision and fog of war
 
@@ -117,6 +121,7 @@ Before committing, the UI tells the player what will happen, for example:
 
 - "ALPHA fires on the trench at 6,3: 5 dice, hit on 6. 60% chance of at least one hit, 18% to pin. Expected casualties 0.2."
 - "No spotted enemy at 6,3: suppressive fire, hit on 6+ (+2 for firing blind)."
+- "SL rallies ALPHA (pinned): 4 in 6 to recover to suppressed."
 - "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next activation."
 
 ### After-action replay
@@ -140,7 +145,7 @@ Design goal: the AI reacts sensibly to suppression and sometimes counterattacks,
 Work one milestone at a time. Do not start the next until the current one passes its acceptance check. Milestone 1 (scaffold) carries over from the first version.
 
 1. **Scaffold.** Done.
-2. **Hex map, counters, activations, movement.** Hex map from JSON, fireteam counters, alternating activations, Move and Fast move, pass. *Accept:* activation order rules tested; deterministic replay of an action list.
+2. **Hex map, counters, activations, movement.** Hex map from JSON, fireteam and SL counters, alternating activations, Move and Fast move, pass, Rally, recovery rolls. *Accept:* activation order rules tested; deterministic replay of an action list.
 3. **Line of sight and fog on hexes.** *Accept:* unit tests for LOS through woods and buildings, and the spotting rules.
 4. **Fire with dice, suppression, casualties, recovery.** *Accept:* tests for target numbers and modifiers; outcome frequencies over many seeded rolls match the exact odds; a team in a trench is much harder to kill than one in the open.
 5. **Assault and the odds preview.** *Accept:* preview odds equal the exact odds the sim rolls against.
@@ -169,4 +174,4 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 
 **Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; anonymous soldiers by role; hand-built maps only; distribution decided later.
 
-**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; drop directional cover.
+**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; drop directional cover. Added the same day: squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire).
