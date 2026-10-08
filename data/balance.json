@@ -1,0 +1,15 @@
+{
+  "turn": {
+    "seconds": 10,
+    "tickSeconds": 0.5
+  },
+  "soldier": {
+    "hpMax": 3
+  },
+  "suppression": {
+    "max": 100,
+    "suppressed": 40,
+    "pinned": 70,
+    "broken": 100
+  }
+}

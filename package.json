@@ -1,0 +1,11 @@
+{
+  "name": "fix-and-flank",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn-based small unit infantry tactics for the browser.",
+  "scripts": {
+    "start": "node scripts/serve.js",
+    "test": "node --test tests/*.test.js"
+  }
+}
