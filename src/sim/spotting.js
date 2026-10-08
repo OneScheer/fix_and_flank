@@ -47,7 +47,7 @@ function checksHex(state, side, h) {
 // Update every side's contacts. Mutates state (a fresh clone) and pushes events.
 export function updateContacts(state, events) {
   state.contacts ??= {};
-  for (const side of state.balance.turn.initiative) {
+  for (const side of state.balance.turn.sides) {
     const contacts = (state.contacts[side] ??= {});
     for (const enemy of state.units) {
       if (enemy.side === side) continue;

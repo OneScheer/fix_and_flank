@@ -14,8 +14,8 @@ The first version (2 m tiles, real-time WEGO with 10 second turns, percentage hi
 
 1. **Fix and flank is the optimal strategy.** If a frontal assault is ever the best plan against an entrenched enemy, the balance is wrong.
 2. **Dice, but never hidden dice.** Combat is resolved with d6 rolls. Before committing, the player sees the target number, the dice and the odds. After, the player sees the actual rolls and why.
-3. **Turn-based, orders for the whole side.** Each turn the player gives every unit an order and commits them all; they are carried out in the order given. Then OPFOR does the same, and a new turn starts. Nothing moves while the player decides.
-4. **Small and readable.** A BLUFOR squad of two fireteams and a squad leader against a few OPFOR fireteams. Each counter is a fireteam (or the SL). Three orders: Move, Fast move, Fire; the SL can also Rally.
+3. **Turn-based, in phases (after Take That Hill).** Each turn runs Movement, Firefight, Rally, Enemy action. In each of its phases the player gives every unit an order and commits them all; they are carried out in the order given. Nothing moves while the player decides.
+4. **Small and readable.** A BLUFOR squad of two fireteams and a squad leader against a few OPFOR fireteams. Each counter is a fireteam (or the SL). Three orders: Move, Fast move, Fire. The SL rallies by being close (the rally phase).
 5. **Real tactics, abstract presentation.** Correct doctrine and terminology, simple visuals (NATO-style counters, flat hexes). No made-up superweapons.
 
 ---
@@ -42,6 +42,7 @@ The simulation must be completely separate from rendering and UI.
     state.js        game state shape
     actions.js      action validation and resolution (the step function)
     orders.js       a side's orders: commit, and planning projections
+    phases.js       the turn sequence: movement, firefight, rally, enemy action
     los.js          line of sight and concealment on hexes
     spotting.js     fog of war and contact tracking
     combat.js       dice, target numbers, suppression, casualties, assault
@@ -84,25 +85,31 @@ Rules for the simulation:
 
 ### Units
 
-A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (default 4: TL, AR, GRN, RFL), status, activated this turn, exposed (fast moved). Casualties remove soldiers; the AR is lost last. A team with no soldiers left is eliminated.
+A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (default 4: TL, AR, GRN, RFL), status, activated in this phase, moved, exposed (fast moved), fired. Casualties remove soldiers; the AR is lost last. A team with no soldiers left is eliminated.
 
-The **squad leader (SL)** is a counter of one man. He moves and fires like a team, may share a hex with one fireteam, and can **Rally**: a suppressed or pinned friendly team in his hex or next to it rolls a d6; on 3+ it improves one step. Rallying is his activation.
+The **squad leader (SL)** is a counter of one man. He moves and fires like a team and may share a hex with one fireteam. He has no rally order: his position drives the **rally phase** (below).
 
 Status: **ok**, **suppressed** (cannot move, can still fire), **pinned** (cannot move and cannot shoot back), eliminated.
 
-### Turn and activations
+### Turn and phases
 
-- Each turn, BLUFOR (the initiative side) gives an order to every unit and commits them; the orders are carried out one after another in the order they were given, each rolling its own dice. A unit without an order holds. An order that has become impossible by the time it runs is skipped with the reason, and that unit holds. Then OPFOR gives and commits its orders, and the turn ends.
+Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), after the Take That Hill turn sequence:
+
+1. **Movement** (BLUFOR): Move or Fast move, or hold. A unit that moves is spent: it cannot fire this turn.
+2. **Firefight** (BLUFOR): units that did not move and are not pinned may Fire, or hold.
+3. **Rally** (BLUFOR, automatic): every suppressed or pinned unit tries to improve one step. With the SL in its hex it succeeds without a roll. Otherwise it rolls a d6 and must beat its distance in hexes to the SL (needs distance + 1, never worse than 6+; 6+ with no SL). A unit next to an enemy cannot rally unless the SL is with it.
+4. **Enemy action** (OPFOR): each suppressed or pinned enemy unit recovers one step and does nothing else; the others Move, Fast move or Fire.
+
+- In a phase that needs orders, the side gives an order to every unit that can act and commits them; the orders are carried out one after another in the order they were given, each rolling its own dice. A unit without an order holds. An order that has become impossible by the time it runs is skipped with the reason, and that unit holds.
 - While planning, each order is checked against where the earlier orders will have put things, so a team can move into a hex another team leaves earlier in the plan. Dice results are not known while planning.
-- At the start of each turn, every suppressed or pinned unit rolls a d6 and improves one step on 5+ (the SL's rally is the reliable way).
-- Each unit gets one order per turn: **Move**, **Fast move**, **Fire**, **Rally** (SL only), or hold.
+- A phase in which nobody can act is skipped. A side's first phase in a turn starts its turn: its units' moved, exposed and fired flags are cleared.
 
 ### Actions
 
 | Action | Effect |
 |---|---|
-| Move | 1 hex. The careful way: the team keeps its normal profile. A unit that moved cannot fire until next turn. |
-| Fast move | Up to 2 hexes, but entering rough terrain ends it. The team is **exposed** until its next activation: easier to spot and to hit. It cannot fire until next turn. |
+| Move | 1 hex. The careful way: the team keeps its normal profile. A unit that moved cannot fire this turn. |
+| Fast move | Up to 2 hexes, but entering rough terrain ends it. The team is **exposed** until its side's next turn: easier to spot and to hit. It cannot fire this turn. |
 | Fire | One d6 per soldier (AR rolls two) at a hex in range and line of sight. On a spotted enemy it is aimed fire; on a hex with no spotted enemy it is suppressive fire at worse odds. |
 | Assault | Moving or firing into an **adjacent enemy hex** starts an assault (close combat). |
 
@@ -130,8 +137,8 @@ Before committing, the UI tells the player what will happen, for example:
 
 - "ALPHA fires on the trench at 6,3: 5 dice, hit on 6. 60% chance of at least one hit, 18% to pin. Expected casualties 0.2."
 - "No spotted enemy at 6,3: suppressive fire, hit on 6+ (+2 for firing blind)."
-- "SL rallies ALPHA (pinned): 4 in 6 to recover to suppressed."
-- "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next activation."
+- "Rally phase: ALPHA needs 3+ on a d6 to become suppressed, 4 in 6 (67%; SL 2 hexes away)."
+- "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next turn."
 
 ### After-action replay
 
@@ -154,7 +161,7 @@ Design goal: the AI reacts sensibly to suppression and sometimes counterattacks,
 Work one milestone at a time. Do not start the next until the current one passes its acceptance check. Milestone 1 (scaffold) carries over from the first version.
 
 1. **Scaffold.** Done.
-2. **Hex map, counters, orders, movement.** Hex map from JSON, fireteam and SL counters, orders for the whole side committed together, Move and Fast move, hold, Rally, recovery rolls. *Accept:* turn order rules tested; deterministic replay of an action list.
+2. **Hex map, counters, orders, movement.** Hex map from JSON, fireteam and SL counters, orders for the whole side committed per phase, Move and Fast move, hold, the phase sequence with the rally phase. *Accept:* turn order rules tested; deterministic replay of an action list.
 3. **Line of sight and fog on hexes.** *Accept:* unit tests for LOS through woods and buildings, and the spotting rules.
 4. **Fire with dice, suppression, casualties, recovery.** *Accept:* tests for target numbers and modifiers; outcome frequencies over many seeded rolls match the exact odds; a team in a trench is much harder to kill than one in the open.
 5. **Assault and the odds preview.** *Accept:* preview odds equal the exact odds the sim rolls against.
@@ -183,4 +190,4 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 
 **Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; anonymous soldiers by role; hand-built maps only; distribution decided later.
 
-**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations at first, then (same day) orders for the whole side committed together; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; directional cover dropped at first, then restored the same day as hexside cover (walls, hedges, parapets). Also added the same day: moved units cannot fire that turn; squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire).
+**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations at first, then (same day) orders for the whole side committed together; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; directional cover dropped at first, then restored the same day as hexside cover (walls, hedges, parapets). Also added the same day: moved units cannot fire that turn; squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire). Later the same day: the Take That Hill phase sequence (movement, firefight, rally, enemy action) replaced the SL's Rally order and the turn-start recovery roll.

@@ -6,8 +6,9 @@ import { chanceAtLeast } from '../sim/dice.js';
 import { key } from '../sim/hex.js';
 import { lineOfSight } from '../sim/los.js';
 import { terrainName, terrainOf } from '../sim/map.js';
+import { rallyNeed } from '../sim/phases.js';
 import { knownEnemies } from '../sim/spotting.js';
-import { betterStatus } from '../sim/state.js';
+import { betterStatus, currentPhase, isSuppressed } from '../sim/state.js';
 
 const pct = (p) => `${Math.round(p * 100)}%`;
 const inSix = (need) => `${7 - Math.min(6, Math.max(1, need))} in 6`;
@@ -33,6 +34,27 @@ function exposureNote(state, u, h, fast) {
   return ` In line of sight of ${who}, but concealed: seen only if one is adjacent.`;
 }
 
+// "holds" where the phase allows moving, else "holds fire".
+function holdWord(state, name = currentPhase(state).name) {
+  const phase = state.balance.turn.phases.find((p) => p.name === name);
+  return phase?.actions?.includes('move') ? 'holds' : 'holds fire';
+}
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 'es'}`;
+
+function leaderNote(state, r) {
+  return r.leader === null ? 'no SL' : `${state.units[r.leader].team} ${plural(r.distance, 'hex')} away`;
+}
+
+// What the rally phase will do for a suppressed or pinned unit, or null.
+export function rallyPreview(state, u) {
+  if (!isSuppressed(u) || u.status === 'eliminated') return null;
+  const r = rallyNeed(state, u);
+  const to = betterStatus(u.status);
+  if (r.auto) return `Rally phase: ${u.team} rallies to ${to} (${state.units[r.leader].team} is with it).`;
+  if (r.blocked) return `Rally phase: ${u.team} cannot rally, enemy adjacent and no SL with it.`;
+  return `Rally phase: ${u.team} needs ${r.need}+ on a d6 to become ${to}, ${inSix(r.need)} (${pct(chanceAtLeast(r.need))}; ${leaderNote(state, r)}).`;
+}
+
 // One line saying what the action will do, or why it cannot be done.
 export function previewAction(state, action) {
   const check = validateAction(state, action);
@@ -46,13 +68,8 @@ export function previewAction(state, action) {
       const end = action.path[action.path.length - 1];
       return `${u.team} fast moves ${action.path.length} hex${action.path.length > 1 ? 'es' : ''} to ${where(end)}. Exposed until its next activation: easier to spot and to hit.${exposureNote(state, u, end, true)}`;
     }
-    case 'rally': {
-      const t = state.units[action.target];
-      const need = state.balance.rally.succeedOn;
-      return `${u.team} rallies ${t.team} (${t.status}): needs ${need}+ on a d6, ${inSix(need)} (${pct(chanceAtLeast(need))}). Success: ${t.team} becomes ${betterStatus(t.status)}.`;
-    }
     case 'pass':
-      return `${u.team} holds.`;
+      return `${u.team} ${holdWord(state)}.`;
     default:
       return '';
   }
@@ -72,26 +89,26 @@ export function eventText(state, e, viewer = null) {
     return `Suspected position at ${key(e.pos)} dropped (${e.why}).`;
   }
   if (viewer && u && u.side !== viewer) {
-    // Enemy actions: only moves of an enemy the viewer can see.
-    if (e.type !== 'moved' || state.contacts?.[viewer]?.[u.id]?.level !== 'spotted') return null;
+    // Enemy actions: only moves and recovery of an enemy the viewer can see.
+    if (!['moved', 'recover'].includes(e.type) || state.contacts?.[viewer]?.[u.id]?.level !== 'spotted') return null;
   }
   switch (e.type) {
     case 'activated':
       return null;
     case 'moved':
       return `${unitName(u)} moves to ${key(e.to)}.`;
-    case 'rally': {
-      const t = state.units[e.target];
-      return `${unitName(u)} rallies ${t.team}: rolled ${e.roll} (needed ${e.need}+). ${e.success ? `${t.team} is now ${e.to}.` : `${t.team} stays ${e.from}.`}`;
-    }
+    case 'rally':
+      if (e.blocked) return `${unitName(u)} cannot rally: enemy adjacent, no SL with it. Still ${e.from}.`;
+      if (e.auto) return `${unitName(u)} rallies with ${state.units[e.leader].team}: now ${e.to}.`;
+      return `${unitName(u)} rolls ${e.roll} to rally (needs ${e.need}+, ${leaderNote(state, e)}): ${e.success ? `now ${e.to}` : `still ${e.from}`}.`;
     case 'recover':
-      return `${unitName(u)} rolls ${e.roll} to recover (needs ${e.need}+): ${e.success ? `now ${e.to}` : `still ${e.from}`}.`;
+      return `${unitName(u)} recovers instead of acting: now ${e.to}.`;
     case 'turn_end':
       return `End of turn ${e.turn}.`;
-    case 'side_start':
-      return `${e.side} gives its orders.`;
     case 'turn_start':
-      return `Turn ${e.turn}. ${e.side} has the initiative.`;
+      return `Turn ${e.turn}.`;
+    case 'phase_start':
+      return phaseText(e);
     case 'rejected':
       return `Not possible: ${e.reason}.`;
     default:
@@ -99,8 +116,17 @@ export function eventText(state, e, viewer = null) {
   }
 }
 
+export function phaseLabel(name) {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+function phaseText(e) {
+  const label = `${phaseLabel(e.name)} phase (${e.side})`;
+  return e.idle ? `${label}: nobody can act.` : `${label}.`;
+}
+
 export function passText(state, e, viewer = null) {
   if (e.type !== 'activated' || e.action !== 'pass') return null;
   if (viewer && state.units[e.unit].side !== viewer) return null;
-  return `${unitName(state.units[e.unit])} holds.`;
+  return `${unitName(state.units[e.unit])} ${holdWord(state, e.phase)}.`;
 }

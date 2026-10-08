@@ -27,7 +27,6 @@ export const COLORS = {
   select: '#ffffff',
   move: 'rgba(140, 230, 140, 0.9)',
   fast: 'rgba(255, 190, 80, 0.9)',
-  rally: 'rgba(120, 200, 255, 0.95)',
   plan: '#ffffff',
   objective: '#f2d24b',
   hexside: {

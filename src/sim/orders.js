@@ -1,37 +1,37 @@
-// Orders for a whole side. Each turn a side gives one order to every unit,
-// then commits them all; they are carried out in the order given, each with
-// its own dice. A unit without an order holds (passes). An order that has
-// become impossible by the time it runs (a rally failed, a hex got taken)
-// is skipped with the reason, and that unit holds.
+// Orders for a whole side in one phase. In each phase the side gives one
+// order to every unit that can act, then commits them all; they are carried
+// out in the order given, each with its own dice. A unit without an order
+// holds (passes). An order that has become impossible by the time it runs
+// (a hex got taken) is skipped with the reason, and that unit holds.
 
-import { applyAction, validateAction } from './actions.js';
+import { applyAction, skipPhase, validateAction } from './actions.js';
 import { canActivate, cloneState } from './state.js';
 
-// Carry out `actions` (in order) for the side whose turn it is, then make
-// every unit of that side without an order hold. Returns { state, events }.
+// Carry out `actions` (in order) in the current phase, then make every unit
+// without an order hold, which ends the phase. Returns { state, events }.
 export function commitOrders(state, actions, rng) {
-  const side = state.activeSide;
+  const same = (s) => s.turn === state.turn && s.phase === state.phase;
   let current = state;
   const events = [];
   for (const action of actions) {
-    if (current.activeSide !== side) break;
+    if (!same(current)) break;
     const r = applyAction(current, action, rng);
     current = r.state;
     events.push(...r.events);
   }
-  while (current.activeSide === side) {
-    const idle = current.units.find((u) => u.side === side && canActivate(current, u));
-    if (!idle) break;
-    const r = applyAction(current, { type: 'pass', unit: idle.id }, rng);
+  while (same(current)) {
+    const idle = current.units.find((u) => canActivate(current, u));
+    const r = idle ? applyAction(current, { type: 'pass', unit: idle.id }, rng) : skipPhase(current, rng);
     current = r.state;
     events.push(...r.events);
+    if (!idle) break;
   }
   return { state: current, events };
 }
 
 // Planning: where things will be if the earlier orders go as planned. Moves
-// are applied; dice orders (rally) only mark the unit as having acted, since
-// their result is not known yet. Never ends the side's turn, never rolls.
+// are applied; dice orders only mark the unit as having acted, since their
+// result is not known yet. Never ends the phase, never rolls.
 export function projectOrders(state, actions) {
   let s = state;
   for (const a of actions) {

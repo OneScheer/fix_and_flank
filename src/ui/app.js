@@ -1,20 +1,21 @@
-// Browser UI: give every unit an order, see each preview, commit them all.
-// The sim is only touched through planning helpers (moveOptions, rallyTargets,
-// projectOrders, checkPlan) and commitOrders. OPFOR's orders come from src/ai.
+// Browser UI: in each of BLUFOR's phases give every unit an order, see each
+// preview, commit them all. The sim is only touched through planning helpers
+// (moveOptions, projectOrders, checkPlan) and commitOrders. OPFOR's orders
+// come from src/ai.
 
-import { moveOptions, rallyTargets } from '../sim/actions.js';
+import { moveOptions } from '../sim/actions.js';
 import { center, hexAt, key, mapBounds, same } from '../sim/hex.js';
 import { visibleFrom } from '../sim/los.js';
 import { inBounds, terrainName, terrainOf } from '../sim/map.js';
 import { checkPlan, commitOrders, projectOrders } from '../sim/orders.js';
 import { createRng } from '../sim/rng.js';
 import { knownEnemies } from '../sim/spotting.js';
-import { canActivate, unitsAt } from '../sim/state.js';
+import { canActivate, currentPhase, unitsAt } from '../sim/state.js';
 import { chooseOrders } from '../ai/basic.js';
 import { createCamera, fitCamera, panBy, toWorld, zoomAt } from '../render/camera.js';
 import { COLORS, drawCounters, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
 import { positionAlong } from './anim.js';
-import { eventText, passText, previewAction } from './describe.js';
+import { eventText, passText, phaseLabel, previewAction, rallyPreview } from './describe.js';
 
 const PLAYER_SIDE = 'BLUFOR';
 const CLICK_SLOP_PX = 4;
@@ -76,10 +77,10 @@ export function startApp(initialState, { reveal = false } = {}) {
   // ---- planning ----
 
   function options() {
-    if (app.selected === null || !planning()) return { moves: [], fast: new Map(), rally: [], from: null };
+    if (app.selected === null || !planning()) return { moves: [], fast: new Map(), from: null };
     const p = projectedFor(app.selected);
     const u = p.units[app.selected];
-    return { ...moveOptions(p, u), rally: rallyTargets(p, u), from: u.pos };
+    return { ...moveOptions(p, u), from: u.pos };
   }
 
   // Give (or replace) the selected unit's order. A replaced order keeps its place.
@@ -93,14 +94,11 @@ export function startApp(initialState, { reveal = false } = {}) {
   }
 
   // The order a click on hex h gives the selected unit, or null. The distance
-  // decides: a next hex is a move, a hex two away a fast move; with the SL, a
-  // suppressed or pinned team next to him is a rally.
+  // decides: a next hex is a move, a hex two away a fast move.
   function orderFor(h) {
     if (app.selected === null) return null;
     const id = app.selected;
     const o = options();
-    const t = o.rally.find((x) => same(x.pos, h));
-    if (t) return { type: 'rally', unit: id, target: t.id };
     if (o.moves.some((m) => same(m, h))) return { type: 'move', unit: id, to: h };
     if (o.fast.has(key(h))) return { type: 'fastMove', unit: id, path: o.fast.get(key(h)) };
     return null;
@@ -124,12 +122,14 @@ export function startApp(initialState, { reveal = false } = {}) {
   function run(actions) {
     const before = app.state;
     const r = commitOrders(before, actions, createRng(before.rngState));
+    let turn = before.turn;
     for (const e of r.events) {
+      if (e.type === 'turn_start') turn = e.turn;
       const line = passText(before, e, PLAYER_SIDE) ?? eventText(r.state, e, PLAYER_SIDE);
       if (!line) continue;
-      const turnLine = e.type === 'turn_end' || e.type === 'turn_start' || e.type === 'side_start';
-      app.log.push(turnLine ? line : `T${e.type === 'recover' ? r.state.turn : before.turn}  ${line}`);
       if (e.type === 'turn_start') app.log.push('');
+      const heading = e.type === 'turn_end' || e.type === 'turn_start' || e.type === 'phase_start';
+      app.log.push(heading ? line : `T${turn}  ${line}`);
     }
     if (app.log.length > MAX_LOG) app.log.splice(0, app.log.length - MAX_LOG);
     // Animate the moves one unit after another, in the order they ran.
@@ -157,6 +157,7 @@ export function startApp(initialState, { reveal = false } = {}) {
       render();
       return;
     }
+    app.message = '';
     const delay = run(app.plan);
     app.plan = [];
     enemyTurn(delay);
@@ -194,18 +195,42 @@ export function startApp(initialState, { reveal = false } = {}) {
 
   function orderLine(u) {
     const i = orderIndex(u.id);
-    if (i === -1) return 'no order: holds';
+    if (!canActivate(app.state, u)) return rallyPreview(app.state, u) ?? (u.moved ? 'moved: cannot fire this turn' : '');
+    if (i === -1) return firefight() ? 'holds fire (fire comes in milestone 4)' : 'no order: holds';
     const check = checkPlan(app.state, app.plan)[i];
     return check.ok ? `${i + 1}. ${previewAction(projectedFor(u.id), app.plan[i]).replace(`${u.team} `, '')}` : `${i + 1}. NOT POSSIBLE: ${check.reason}`;
   }
 
+  const firefight = () => !(currentPhase(app.state).actions ?? []).includes('move');
+
+  function activeText() {
+    const s = app.state;
+    if (!planning()) return app.aiPending || s.activeSide !== PLAYER_SIDE ? 'Enemy action: OPFOR is acting.' : 'Carrying out orders.';
+    const total = myUnits().length;
+    if (firefight()) {
+      return `Firefight phase: ${total} unit${total === 1 ? '' : 's'} that did not move can fire. Fire comes in milestone 4; for now commit (Space) to go on.`;
+    }
+    return `Movement phase: give move orders, then commit. A unit that moves cannot fire this turn. ${app.plan.length} of ${total} have an order; the rest hold.`;
+  }
+
+  // Header: the turn's phases, the current one lit.
+  function renderPhases() {
+    const s = app.state;
+    const spans = s.balance.turn.phases.map((p, i) => {
+      const el = document.createElement('span');
+      el.textContent = phaseLabel(p.name);
+      el.title = `${p.side}${p.automatic ? ', automatic' : ''}`;
+      if (i < s.phase) el.className = 'done';
+      if (i === s.phase && s.activeSide !== null) el.className = 'now';
+      return el;
+    });
+    $('phases').replaceChildren(...spans);
+  }
+
   function render() {
     const s = app.state;
-    const ordered = app.plan.length;
-    const total = myUnits().length;
-    $('active').textContent = !planning()
-      ? (app.aiPending || s.activeSide !== PLAYER_SIDE ? 'OPFOR is giving its orders.' : 'Carrying out orders.')
-      : `Give your units their orders, then commit. ${ordered} of ${total} have an order; the rest hold.`;
+    $('active').textContent = activeText();
+    renderPhases();
 
     const list = $('units');
     list.replaceChildren(...s.units.filter((u) => u.side === PLAYER_SIDE).map((u) => {
@@ -229,6 +254,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     $('hold').disabled = !planning() || !sel || orderIndex(sel.id) === -1;
     $('clear').disabled = !planning() || !app.plan.length;
     $('commit').disabled = !planning();
+    $('commit').textContent = firefight() ? 'END FIREFIGHT' : 'COMMIT MOVES';
     $('view').classList.toggle('selected', app.view);
     const contacts = knownEnemies(s, PLAYER_SIDE);
     const sp = contacts.filter((c) => c.level === 'spotted').length;
@@ -243,14 +269,10 @@ export function startApp(initialState, { reveal = false } = {}) {
   function hint(u) {
     if (!planning()) return '';
     if (!u) return 'Left click one of your units to select it.';
-    const p = projectedFor(u.id).units[u.id];
     const deselect = ' Right click to deselect.';
-    if (p.status !== 'ok') {
-      const rally = u.kind === 'leader' && p.status !== 'pinned' ? ' Click a blue hex to rally a team.' : '';
-      return `${u.team} selected: ${p.status}, cannot move.${rally}${deselect}`;
-    }
-    const rally = u.kind === 'leader' ? ' Blue: rally a suppressed or pinned team.' : '';
-    return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${rally}${deselect}`;
+    if (firefight()) return `${u.team} selected: it did not move and can fire (milestone 4).${deselect}`;
+    const lead = u.kind === 'leader' ? ' Teams in his hex rally for sure in the rally phase; further away the roll must beat the distance to him.' : '';
+    return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${lead}${deselect}`;
   }
 
   function renderHover() {
@@ -305,7 +327,6 @@ export function startApp(initialState, { reveal = false } = {}) {
       const end = path[path.length - 1];
       if (!o.moves.some((m) => same(m, end))) marks.push({ hex: end, color: COLORS.fast });
     }
-    for (const t of o.rally) marks.push({ hex: t.pos, color: COLORS.rally, width: 3 });
     if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
     if (app.view && app.selected !== null) {
       const from = projectedFor(app.selected).units[app.selected].pos;
@@ -326,8 +347,8 @@ export function startApp(initialState, { reveal = false } = {}) {
       app.plan.forEach((a, i) => {
         if (a.type === 'pass') return;
         const from = projectOrders(s, app.plan.slice(0, i)).units[a.unit].pos;
-        const path = a.type === 'move' ? [a.to] : a.type === 'fastMove' ? a.path : [unit(a.target).pos];
-        const color = !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : a.type === 'rally' ? COLORS.rally : COLORS.move;
+        const path = a.type === 'move' ? [a.to] : a.path;
+        const color = !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.move;
         drawPath(ctx, app.cam, from, path, color);
       });
     }
@@ -395,7 +416,9 @@ export function startApp(initialState, { reveal = false } = {}) {
       return;
     }
     if (app.selected !== null) {
-      app.message = 'That hex is out of reach. Green: move, orange: fast move. Right click to deselect.';
+      app.message = firefight()
+        ? 'Fire comes in milestone 4. Commit (Space) to end the firefight phase.'
+        : 'That hex is out of reach. Green: move, orange: fast move. Right click to deselect.';
       render();
     }
   });
@@ -430,7 +453,7 @@ export function startApp(initialState, { reveal = false } = {}) {
   $('commit').onclick = commit;
   $('view').onclick = toggleView;
 
-  app.log.push(`Turn 1. ${app.state.activeSide} has the initiative.`);
+  app.log.push('Turn 1.', `${phaseLabel(currentPhase(app.state).name)} phase (${app.state.activeSide}).`);
   render();
   renderHover();
   enemyTurn(0);

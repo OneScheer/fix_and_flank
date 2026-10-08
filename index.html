@@ -16,6 +16,10 @@
     header { display: flex; align-items: baseline; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
     header h1 { margin: 0; font-size: 15px; letter-spacing: 0.08em; }
     #turn { color: var(--dim); }
+    #phases { display: flex; gap: 4px; }
+    #phases span { padding: 1px 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--dim); }
+    #phases span.done { opacity: 0.5; }
+    #phases span.now { color: #fff; border-color: var(--accent); background: #22324a; }
     main { flex: 1; display: flex; min-height: 0; }
     #board { flex: 1; min-width: 0; display: block; touch-action: none; cursor: crosshair; }
     aside { width: 340px; display: flex; flex-direction: column; gap: 12px; padding: 12px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
@@ -45,7 +49,7 @@
   </style>
 </head>
 <body>
-  <header><h1>FIX AND FLANK</h1><span id="turn"></span></header>
+  <header><h1>FIX AND FLANK</h1><span id="phases"></span><span id="turn"></span></header>
   <main>
     <canvas id="board"></canvas>
     <aside>
@@ -72,10 +76,11 @@
         <pre id="log"></pre>
       </section>
       <section class="keys">
-        Left click a unit to select it, then left click a hex: green moves 1 hex, orange fast moves 2 (exposed), blue (SL only) rallies a suppressed or pinned team.
+        Each turn: Movement (move your units; a unit that moves cannot fire this turn), Firefight (units that did not move fire), Rally (automatic: suppressed and pinned units roll to recover, sure with the SL in their hex, otherwise the roll must beat the distance to him), Enemy action.
+        Left click a unit to select it, then left click a hex: green moves 1 hex, orange fast moves 2 (exposed).
         Right click or Esc deselects. Clicking a hex with a team and the SL again switches between them.
         A new order replaces the old one. Orders run in the order given. Units without an order hold.
-        H hold (remove the selected unit's order), Tab next unit, Space commit. V shades what the selected unit cannot see. Drag to pan, wheel to zoom, Home fits the map.
+        H hold (remove the selected unit's order), Tab next unit, Space commits the phase. V shades what the selected unit cannot see. Drag to pan, wheel to zoom, Home fits the map.
         OPFOR is only shown once spotted (in the open, adjacent, moving fast, or firing); ? marks a suspected position.
       </section>
     </aside>

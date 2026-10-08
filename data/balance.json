@@ -3,9 +3,12 @@
     "hexMeters": 50
   },
   "turn": {
-    "initiative": [
-      "BLUFOR",
-      "OPFOR"
+    "sides": ["BLUFOR", "OPFOR"],
+    "phases": [
+      { "name": "movement", "side": "BLUFOR", "actions": ["move", "fastMove"] },
+      { "name": "firefight", "side": "BLUFOR", "actions": ["fire"] },
+      { "name": "rally", "side": "BLUFOR", "automatic": "rally" },
+      { "name": "enemy action", "side": "OPFOR", "actions": ["move", "fastMove", "fire"], "recoverFirst": true }
     ]
   },
   "unit": {
@@ -28,12 +31,8 @@
   "movement": {
     "fastMoveHexes": 2
   },
-  "status": {
-    "recoverOn": 5
-  },
   "rally": {
-    "rangeHexes": 1,
-    "succeedOn": 3
+    "worstOn": 6
   },
   "vision": {
     "maxRangeHexes": 12,

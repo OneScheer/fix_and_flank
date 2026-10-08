@@ -1,32 +1,24 @@
-// Actions and the step function. One action is one unit's order for the turn.
+// Actions and the step function. One action is one unit's order in a phase.
 //
 // { type: 'move', unit, to: {col, row} }           1 hex
 // { type: 'fastMove', unit, path: [{col, row}, ...] }  up to fastMoveHexes;
 //                                                   entering rough terrain ends it
-// { type: 'rally', unit, target }                 the SL rallies a suppressed or
-//                                                   pinned friendly team within
-//                                                   rally.rangeHexes: d6 >= succeedOn
-//                                                   improves it one step
-// { type: 'pass', unit }
+// { type: 'pass', unit }                           holds
 //
-// Suppressed and pinned teams cannot move. Stacking: one fireteam per hex,
-// plus the squad leader. At the start of each turn every suppressed or
-// pinned unit rolls to recover one step (status.recoverOn).
-//
-// Each turn every side in initiative order gives orders to all its units and
-// commits them (see orders.js): the side keeps acting until all its units
-// have acted, then the next side does. When nobody is left, the turn ends
-// and a new one starts with the side that has the initiative.
+// Only the current phase's side acts, and only with the phase's actions
+// (see phases.js). Suppressed and pinned teams cannot move. Stacking: one
+// fireteam per hex, plus the squad leader. A side gives orders to all its
+// units and commits them (see orders.js); when nobody is left to act, the
+// next phase starts.
 
-import { rollD6 } from './dice.js';
-import { adjacent, distance, key, neighbors } from './hex.js';
+import { adjacent, key, neighbors } from './hex.js';
 import { inBounds, terrainName, terrainOf } from './map.js';
+import { advance } from './phases.js';
 import { updateContacts } from './spotting.js';
-import {
-  betterStatus, canActivate, cloneState, firstSideToAct, isSuppressed, sidesWithActivations, unitsAt,
-} from './state.js';
+import { canActivate, cloneState, currentPhase, isActive, isSuppressed, unitsAt } from './state.js';
 
-export const ACTION_TYPES = ['move', 'fastMove', 'rally', 'pass'];
+export const ACTION_TYPES = ['move', 'fastMove', 'pass'];
+const ACTION_NAMES = { move: 'moving', fastMove: 'fast moving' };
 
 function enterable(state, h, unit) {
   if (!inBounds(state.map, h)) return 'off the map';
@@ -44,20 +36,12 @@ export function validateAction(state, action) {
   if (!ACTION_TYPES.includes(action?.type)) return { ok: false, reason: `unknown action '${action?.type}'` };
   const unit = state.units[action.unit];
   if (!unit) return { ok: false, reason: 'no such unit' };
-  if (unit.side !== state.activeSide) return { ok: false, reason: `it is ${state.activeSide}'s activation` };
-  if (!canActivate(state, unit)) return { ok: false, reason: `${unit.team} has already acted this turn` };
+  const phase = currentPhase(state);
+  if (unit.side !== phase.side) return { ok: false, reason: `it is the ${phase.name} phase (${phase.side})` };
+  if (!isActive(unit)) return { ok: false, reason: `${unit.team} is eliminated` };
+  if (unit.activated) return { ok: false, reason: `${unit.team} has already acted in this phase` };
   if (action.type === 'pass') return { ok: true };
-
-  if (action.type === 'rally') {
-    if (unit.kind !== 'leader') return { ok: false, reason: 'only the squad leader can rally' };
-    if (unit.status === 'pinned') return { ok: false, reason: `${unit.team} is pinned and cannot rally` };
-    const target = state.units[action.target];
-    if (!target || target.side !== unit.side || target.status === 'eliminated') return { ok: false, reason: 'no friendly team to rally there' };
-    if (!isSuppressed(target)) return { ok: false, reason: `${target.team} is not suppressed` };
-    const range = state.balance.rally.rangeHexes;
-    if (distance(unit.pos, target.pos) > range) return { ok: false, reason: `${target.team} is more than ${range} hex away` };
-    return { ok: true };
-  }
+  if (!(phase.actions ?? []).includes(action.type)) return { ok: false, reason: `no ${ACTION_NAMES[action.type]} in the ${phase.name} phase` };
 
   if (isSuppressed(unit)) return { ok: false, reason: `${unit.team} is ${unit.status} and cannot move` };
   const path = action.type === 'move' ? [action.to] : action.path;
@@ -83,7 +67,7 @@ export function validateAction(state, action) {
 export function moveOptions(state, unit) {
   const moves = [];
   const fast = new Map();
-  if (isSuppressed(unit) || !canActivate(state, unit)) return { moves, fast };
+  if (!canActivate(state, unit)) return { moves, fast };
   const ok = (path, type) => validateAction(state, type === 'move'
     ? { type, unit: unit.id, to: path[0] } : { type, unit: unit.id, path }).ok;
   const frontier = [[]];
@@ -107,46 +91,6 @@ function neighborsInBounds(state, h) {
   return neighbors(h).filter((n) => inBounds(state.map, n));
 }
 
-// Friendly suppressed or pinned teams the SL could rally now.
-export function rallyTargets(state, leader) {
-  if (leader.kind !== 'leader') return [];
-  return state.units.filter((t) => validateAction(state, { type: 'rally', unit: leader.id, target: t.id }).ok);
-}
-
-// Start of a turn: every suppressed or pinned unit rolls to recover a step.
-function recoveryRolls(state, rng, events) {
-  const need = state.balance.status.recoverOn;
-  for (const u of state.units) {
-    if (!isSuppressed(u)) continue;
-    const roll = rollD6(rng);
-    const success = roll >= need;
-    const from = u.status;
-    if (success) u.status = betterStatus(u.status);
-    events.push({ type: 'recover', unit: u.id, roll, need, success, from, to: u.status });
-  }
-}
-
-// After an activation: who acts next, or end the turn.
-function advance(state, rng, events) {
-  const left = sidesWithActivations(state);
-  if (left.includes(state.activeSide)) return; // the side is still giving orders
-  if (left.length) {
-    state.activeSide = left[0];
-    events.push({ type: 'side_start', turn: state.turn, side: state.activeSide });
-  } else {
-    events.push({ type: 'turn_end', turn: state.turn });
-    state.turn += 1;
-    for (const u of state.units) {
-      u.activated = false;
-      u.moved = false;
-      u.fired = false;
-    }
-    state.activeSide = firstSideToAct(state);
-    events.push({ type: 'turn_start', turn: state.turn, side: state.activeSide });
-    recoveryRolls(state, rng, events);
-  }
-}
-
 // Resolve one action. Returns { state, events }; an invalid action leaves the
 // state unchanged (the activation is not used) and reports why.
 export function applyAction(state, action, rng) {
@@ -154,8 +98,7 @@ export function applyAction(state, action, rng) {
   if (!check.ok) return { state, events: [{ type: 'rejected', action, reason: check.reason }] };
   const next = cloneState(state);
   const unit = next.units[action.unit];
-  const events = [{ type: 'activated', unit: unit.id, side: unit.side, turn: next.turn, action: action.type }];
-  unit.exposed = false;
+  const events = [{ type: 'activated', unit: unit.id, side: unit.side, turn: next.turn, phase: currentPhase(next).name, action: action.type }];
 
   if (action.type === 'move' || action.type === 'fastMove') {
     const path = action.type === 'move' ? [action.to] : action.path;
@@ -166,17 +109,18 @@ export function applyAction(state, action, rng) {
     unit.moved = true;
     if (action.type === 'fastMove') unit.exposed = true;
   }
-  if (action.type === 'rally') {
-    const target = next.units[action.target];
-    const need = next.balance.rally.succeedOn;
-    const roll = rollD6(rng);
-    const success = roll >= need;
-    const from = target.status;
-    if (success) target.status = betterStatus(target.status);
-    events.push({ type: 'rally', unit: unit.id, target: target.id, roll, need, success, from, to: target.status });
-  }
   unit.activated = true;
   updateContacts(next, events);
+  advance(next, rng, events);
+  updateContacts(next, events);
+  next.rngState = rng.getState();
+  return { state: next, events };
+}
+
+// Go on from a phase in which nobody can act (all eliminated or pinned, say).
+export function skipPhase(state, rng) {
+  const next = cloneState(state);
+  const events = [];
   advance(next, rng, events);
   updateContacts(next, events);
   next.rngState = rng.getState();

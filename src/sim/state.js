@@ -4,7 +4,8 @@ import { updateContacts } from './spotting.js';
 //
 // state = {
 //   turn,                 1-based
-//   activeSide,           side whose fireteam acts next
+//   phase,                index into balance.turn.phases (movement, firefight, rally, enemy action)
+//   activeSide,           the side of the current phase
 //   rngState,             uint32, RNG state for the next action
 //   balance, map,         frozen, shared by reference between states
 //   units: [{
@@ -13,10 +14,10 @@ import { updateContacts } from './spotting.js';
 //     soldiers: ['TL', 'AR', 'GRN', 'RFL'],   who is left (a leader: ['SL'])
 //     status: 'ok' | 'suppressed' | 'pinned' | 'eliminated',
 //                         suppressed: cannot move; pinned: cannot move or fire
-//     activated,          has acted this turn
-//     moved,              moved or fast moved this turn: cannot fire until next turn
-//     exposed,            fast moved; until its own next activation
-//     fired,              fired this turn (gives it away; set by fire, milestone 4)
+//     activated,          has acted in the current phase
+//     moved,              moved or fast moved: cannot fire until its side's next turn
+//     exposed,            fast moved; until its side's next turn starts
+//     fired,              fired (gives it away until its side's next turn; set by fire, milestone 4)
 //   }],
 //   contacts: { [side]: { [enemyId]: { level: 'spotted' | 'suspected', pos, turn } } }
 // }
@@ -40,15 +41,15 @@ export function createState({ balance, map, seed }) {
   }));
   const state = {
     turn: 1,
-    activeSide: null,
+    phase: 0,
+    activeSide: balance.turn.phases[0].side,
     rngState: seed >>> 0,
     seed: seed >>> 0,
     balance,
     map,
     units,
-    contacts: Object.fromEntries((balance.turn.initiative).map((side) => [side, {}])),
+    contacts: Object.fromEntries((balance.turn.sides).map((side) => [side, {}])),
   };
-  state.activeSide = firstSideToAct(state);
   updateContacts(state, []);
   return state;
 }
@@ -61,17 +62,20 @@ export function isActive(unit) {
   return unit.status !== 'eliminated';
 }
 
+export function currentPhase(state) {
+  return state.balance.turn.phases[state.phase];
+}
+
+// Could the unit do any of the phase's actions (other than hold)? Moving
+// needs a unit that is not suppressed or pinned; firing, one that may fire.
+export function canActIn(phase, unit) {
+  if (!isActive(unit) || unit.side !== phase.side) return false;
+  return (phase.actions ?? []).some((t) => (t === 'fire' ? mayFire(unit).ok : !isSuppressed(unit)));
+}
+
+// Still waiting for an order in the current phase.
 export function canActivate(state, unit) {
-  return isActive(unit) && !unit.activated;
-}
-
-export function sidesWithActivations(state) {
-  return state.balance.turn.initiative.filter((side) => state.units.some((u) => u.side === side && canActivate(state, u)));
-}
-
-// The side with initiative if it has a team left to act, else the next one.
-export function firstSideToAct(state) {
-  return sidesWithActivations(state)[0] ?? null;
+  return !unit.activated && canActIn(currentPhase(state), unit);
 }
 
 export function unitsAt(state, h) {

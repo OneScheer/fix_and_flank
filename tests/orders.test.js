@@ -15,15 +15,15 @@ function squad() {
   ]);
 }
 
-test('a side orders all its units at once; the orders run in the order given, then the other side acts', () => {
+test('a side orders all its units at once; the orders run in the order given, then the next phase starts', () => {
   const s = squad();
   const r = commit(s, [move(1, 4, 5), move(0, 3, 5)]);
   const moved = r.events.filter((e) => e.type === 'moved').map((e) => e.unit);
   assert.deepEqual(moved, [1, 0], 'BRAVO first, as ordered');
   assert.deepEqual(r.state.units[0].pos, H(3, 5));
   assert.deepEqual(r.state.units[1].pos, H(4, 5));
-  assert.equal(r.state.activeSide, 'OPFOR');
-  assert.equal(r.events.find((e) => e.type === 'side_start').side, 'OPFOR');
+  assert.equal(r.events.find((e) => e.type === 'phase_start').name, 'firefight');
+  assert.equal(r.state.activeSide, 'BLUFOR', 'the SL held, so he can fire');
 });
 
 test('units without an order hold', () => {
@@ -34,8 +34,9 @@ test('units without an order hold', () => {
   assert.deepEqual(r.state.units[1].pos, s.units[1].pos);
 });
 
-test('then OPFOR commits, and the turn ends', () => {
-  let s = commit(squad(), []).state;
+test('then OPFOR commits in the enemy action phase, and the turn ends', () => {
+  let s = commit(commit(squad(), []).state, []).state;
+  assert.equal(s.activeSide, 'OPFOR');
   const r = commit(s, []);
   assert.ok(r.events.some((e) => e.type === 'turn_end'));
   assert.equal(r.state.turn, 2);
@@ -68,15 +69,14 @@ test('an order that has become impossible is skipped with the reason, and that u
   const rej = r.events.find((e) => e.type === 'rejected');
   assert.match(rej.reason, /friendly team/);
   assert.deepEqual(r.state.units[1].pos, s.units[1].pos);
-  assert.equal(r.state.units[1].activated, true, 'it held instead');
-  assert.equal(r.state.activeSide, 'OPFOR');
+  assert.ok(r.events.some((e) => e.type === 'activated' && e.unit === 1 && e.action === 'pass'), 'it held instead');
 });
 
 test('committing the same plan from the same seed gives the same result', () => {
   const play = () => {
     let s = trainingState(3);
     const log = [];
-    for (const plan of [[move(0, 4, 10), move(3, 5, 10)], [], [move(0, 4, 9), move(1, 6, 10)], []]) {
+    for (const plan of [[move(0, 4, 10), move(3, 5, 10)], [], [], [move(0, 4, 9), move(1, 6, 10)], [], []]) {
       const r = commit(s, plan);
       s = r.state;
       log.push(r.events);
