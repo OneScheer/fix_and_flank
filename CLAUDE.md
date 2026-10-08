@@ -115,11 +115,13 @@ Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), 
 
 ### Fire
 
-- Target number (TN) on a d6, default 4+, modified by range, the target's cover, the target being exposed, the shooter being suppressed, and firing at a hex with no spotted enemy. Clamped to 2+ .. 6+.
+- One d6 per soldier, the AR rolls two (a full team: 5 dice; the SL: 1).
+- Target number (TN) on a d6, base 4+, plus: range (+0 up to 3 hexes, +1 up to 6, +2 up to 10, the maximum), the target hex's directional cover (+1 for 5+ cover, +2 for 6+), target exposed (-1), shooter suppressed (+1), no spotted enemy in the hex (+2, suppressive fire). Clamped to 2+ .. 6+.
 - Each die at or above the TN is a hit. 1 hit: the target is suppressed (already suppressed: pinned). 2 or more hits: pinned.
-- Each hit gets a casualty roll against the target's directional cover (for example 4+ in the open, 5+ in a trench seen from the flank, 6 behind its parapet). Each success removes a soldier.
-- **Units that moved this turn cannot fire** until the next turn.
-- Suppressed teams cannot move and fire at worse odds. Pinned teams cannot move or fire.
+- Each hit gets a casualty roll against the target's directional cover (for example 4+ in the open, 5+ in a trench seen from the flank, 6 behind its parapet). Each success removes a soldier (rifleman first, AR last).
+- Fire hits the fireteam in the hex; the SL only when he is alone there. Suppressive fire on a hex with an unseen enemy can still hit it; the shooter sees the dice but not the effect.
+- **Units that moved this turn cannot fire.** Suppressed units fire at worse odds. Pinned units cannot fire. A spotted enemy in the next hex cannot be fired on: that is an assault (milestone 5).
+- A unit that fires is spotted by every enemy with line of sight until its side's next turn starts.
 
 ### Assault
 
@@ -135,8 +137,8 @@ Close combat when a team moves or fires into an adjacent enemy hex. Both sides r
 
 Before committing, the UI tells the player what will happen, for example:
 
-- "ALPHA fires on the trench at 6,3: 5 dice, hit on 6. 60% chance of at least one hit, 18% to pin. Expected casualties 0.2."
-- "No spotted enemy at 6,3: suppressive fire, hit on 6+ (+2 for firing blind)."
+- "ALPHA fires on OPFOR ALPHA at 3,1 (open): 5 dice, hit on 5+ (4 base, +1 range 4 hexes). 87% at least one hit, 54% to pin. Casualties on 4+ (open), expected 0.83."
+- "ALPHA puts suppressive fire on 4,2 (trench), no spotted enemy there: 5 dice, hit on 6+ (4 base, +2 range 9 hexes, +2 behind a parapet (SE side), +2 no spotted enemy: suppressive fire, 10+ capped at 6+). If a team is there: 60% at least one hit, 20% to pin."
 - "Rally phase: ALPHA needs 3+ on a d6 to become suppressed, 4 in 6 (67%; SL 2 hexes away)."
 - "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next turn."
 

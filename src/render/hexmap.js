@@ -27,6 +27,9 @@ export const COLORS = {
   select: '#ffffff',
   move: 'rgba(140, 230, 140, 0.9)',
   fast: 'rgba(255, 190, 80, 0.9)',
+  fire: '#ff5a3d',
+  fireZone: 'rgba(255, 90, 60, 0.13)',
+  suspect: 'rgba(255, 190, 80, 0.9)',
   plan: '#ffffff',
   objective: '#f2d24b',
   hexside: {
@@ -229,6 +232,28 @@ export function drawPath(ctx, cam, from, path, color) {
     i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
   });
   ctx.stroke();
+}
+
+// A line of fire: dashed, from hex center to hex center.
+export function drawFire(ctx, cam, from, to, color, alpha = 1) {
+  const a = center(from);
+  const b = center(to);
+  const p = toScreen(cam, a.x, a.y);
+  const q = toScreen(cam, b.x, b.y);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = Math.max(2, cam.scale * 0.07);
+  ctx.setLineDash([cam.scale * 0.18, cam.scale * 0.1]);
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+  ctx.lineTo(q.x, q.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(q.x, q.y, Math.max(3, cam.scale * 0.12), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function badge(ctx, x, y, r, fill, text) {

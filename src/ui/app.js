@@ -3,17 +3,18 @@
 // (moveOptions, projectOrders, checkPlan) and commitOrders. OPFOR's orders
 // come from src/ai.
 
-import { moveOptions } from '../sim/actions.js';
+import { moveOptions, validateAction } from '../sim/actions.js';
 import { center, hexAt, key, mapBounds, same } from '../sim/hex.js';
 import { visibleFrom } from '../sim/los.js';
 import { inBounds, terrainName, terrainOf } from '../sim/map.js';
+import { fireDice } from '../sim/combat.js';
 import { checkPlan, commitOrders, projectOrders } from '../sim/orders.js';
 import { createRng } from '../sim/rng.js';
 import { knownEnemies } from '../sim/spotting.js';
 import { canActivate, currentPhase, unitsAt } from '../sim/state.js';
 import { chooseOrders } from '../ai/basic.js';
 import { createCamera, fitCamera, panBy, toWorld, zoomAt } from '../render/camera.js';
-import { COLORS, drawCounters, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
+import { COLORS, drawCounters, drawFire, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
 import { positionAlong } from './anim.js';
 import { eventText, passText, phaseLabel, previewAction, rallyPreview } from './describe.js';
 
@@ -21,6 +22,8 @@ const PLAYER_SIDE = 'BLUFOR';
 const CLICK_SLOP_PX = 4;
 const WHEEL_ZOOM = 1.15;
 const MOVE_ANIM_MS = 220;   // per hex
+const SHOT_MS = 650;        // a line of fire stays this long
+const SHOT_GAP_MS = 300;    // between shots, in the order they were fired
 const AI_DELAY_MS = 450;    // pause before OPFOR commits, so it can be followed
 const MAX_LOG = 200;
 
@@ -37,6 +40,8 @@ export function startApp(initialState, { reveal = false } = {}) {
     plan: [],          // BLUFOR's orders for this turn, in the order they will run
     log: [],
     anim: [],
+    shots: [],         // lines of fire being shown: { from, to, start, side }
+    fireCache: null,
     hover: null,
     message: '',
     aiPending: false,
@@ -77,10 +82,26 @@ export function startApp(initialState, { reveal = false } = {}) {
   // ---- planning ----
 
   function options() {
-    if (app.selected === null || !planning()) return { moves: [], fast: new Map(), from: null };
+    if (app.selected === null || !planning()) return { moves: [], fast: new Map(), fire: new Set(), from: null };
     const p = projectedFor(app.selected);
     const u = p.units[app.selected];
-    return { ...moveOptions(p, u), from: u.pos };
+    return { ...moveOptions(p, u), fire: fireTargets(p, u), from: u.pos };
+  }
+
+  // Hexes the unit can fire at (keys). Cached: it checks line of sight to every hex in range.
+  function fireTargets(p, u) {
+    const k = `${u.id}|${JSON.stringify(app.plan)}`;
+    if (app.fireCache?.state === app.state && app.fireCache.k === k) return app.fireCache.set;
+    const set = new Set();
+    if (firefight()) {
+      for (let row = 0; row < p.map.height; row++) {
+        for (let col = 0; col < p.map.width; col++) {
+          if (validateAction(p, { type: 'fire', unit: u.id, target: { col, row } }).ok) set.add(`${col},${row}`);
+        }
+      }
+    }
+    app.fireCache = { state: app.state, k, set };
+    return set;
   }
 
   // Give (or replace) the selected unit's order. A replaced order keeps its place.
@@ -93,12 +114,14 @@ export function startApp(initialState, { reveal = false } = {}) {
     render();
   }
 
-  // The order a click on hex h gives the selected unit, or null. The distance
-  // decides: a next hex is a move, a hex two away a fast move.
+  // The order a click on hex h gives the selected unit, or null. In the
+  // movement phase the distance decides: a next hex is a move, a hex two away
+  // a fast move. In the firefight, any hex it can fire at.
   function orderFor(h) {
     if (app.selected === null) return null;
     const id = app.selected;
     const o = options();
+    if (o.fire.has(key(h))) return { type: 'fire', unit: id, target: h };
     if (o.moves.some((m) => same(m, h))) return { type: 'move', unit: id, to: h };
     if (o.fast.has(key(h))) return { type: 'fastMove', unit: id, path: o.fast.get(key(h)) };
     return null;
@@ -132,7 +155,8 @@ export function startApp(initialState, { reveal = false } = {}) {
       app.log.push(heading ? line : `T${turn}  ${line}`);
     }
     if (app.log.length > MAX_LOG) app.log.splice(0, app.log.length - MAX_LOG);
-    // Animate the moves one unit after another, in the order they ran.
+    // Animate the moves one unit after another, in the order they ran, then
+    // show the lines of fire the player could see.
     let delay = 0;
     const byUnit = new Map();
     for (const e of r.events.filter((x) => x.type === 'moved')) {
@@ -143,6 +167,11 @@ export function startApp(initialState, { reveal = false } = {}) {
     for (const [id, hexes] of byUnit) {
       app.anim.push({ id, points: hexes.map(center), start: now + delay });
       delay += (hexes.length - 1) * MOVE_ANIM_MS;
+    }
+    for (const e of r.events.filter((x) => x.type === 'fire')) {
+      if (!eventText(r.state, e, PLAYER_SIDE)) continue;
+      app.shots.push({ from: e.from, to: e.hex, start: now + delay, side: r.state.units[e.unit].side });
+      delay += SHOT_GAP_MS;
     }
     app.state = r.state;
     render();
@@ -196,9 +225,9 @@ export function startApp(initialState, { reveal = false } = {}) {
   function orderLine(u) {
     const i = orderIndex(u.id);
     if (!canActivate(app.state, u)) return rallyPreview(app.state, u) ?? (u.moved ? 'moved: cannot fire this turn' : '');
-    if (i === -1) return firefight() ? 'holds fire (fire comes in milestone 4)' : 'no order: holds';
+    if (i === -1) return firefight() ? 'no order: holds fire' : 'no order: holds';
     const check = checkPlan(app.state, app.plan)[i];
-    return check.ok ? `${i + 1}. ${previewAction(projectedFor(u.id), app.plan[i]).replace(`${u.team} `, '')}` : `${i + 1}. NOT POSSIBLE: ${check.reason}`;
+    return check.ok ? `${i + 1}. ${previewAction(projectedFor(u.id), app.plan[i]).replace(new RegExp(`^${u.team} `), '')}` : `${i + 1}. NOT POSSIBLE: ${check.reason}`;
   }
 
   const firefight = () => !(currentPhase(app.state).actions ?? []).includes('move');
@@ -208,7 +237,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     if (!planning()) return app.aiPending || s.activeSide !== PLAYER_SIDE ? 'Enemy action: OPFOR is acting.' : 'Carrying out orders.';
     const total = myUnits().length;
     if (firefight()) {
-      return `Firefight phase: ${total} unit${total === 1 ? '' : 's'} that did not move can fire. Fire comes in milestone 4; for now commit (Space) to go on.`;
+      return `Firefight phase: ${total} unit${total === 1 ? '' : 's'} that did not move can fire. ${app.plan.length} of ${total} have a target; the rest hold fire.`;
     }
     return `Movement phase: give move orders, then commit. A unit that moves cannot fire this turn. ${app.plan.length} of ${total} have an order; the rest hold.`;
   }
@@ -254,7 +283,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     $('hold').disabled = !planning() || !sel || orderIndex(sel.id) === -1;
     $('clear').disabled = !planning() || !app.plan.length;
     $('commit').disabled = !planning();
-    $('commit').textContent = firefight() ? 'END FIREFIGHT' : 'COMMIT MOVES';
+    $('commit').textContent = firefight() ? 'COMMIT FIRE' : 'COMMIT MOVES';
     $('view').classList.toggle('selected', app.view);
     const contacts = knownEnemies(s, PLAYER_SIDE);
     const sp = contacts.filter((c) => c.level === 'spotted').length;
@@ -270,12 +299,19 @@ export function startApp(initialState, { reveal = false } = {}) {
     if (!planning()) return '';
     if (!u) return 'Left click one of your units to select it.';
     const deselect = ' Right click to deselect.';
-    if (firefight()) return `${u.team} selected: it did not move and can fire (milestone 4).${deselect}`;
+    if (firefight()) {
+      const h = app.hover;
+      if (h && options().fire.has(key(h))) return previewAction(projectedFor(u.id), { type: 'fire', unit: u.id, target: h });
+      return `${u.team} selected (${fireDiceText(u)}). Point at a hex to see the odds; click to fire. Red ring: spotted enemy (aimed fire). Elsewhere in the red area: suppressive fire.${deselect}`;
+    }
     const lead = u.kind === 'leader' ? ' Teams in his hex rally for sure in the rally phase; further away the roll must beat the distance to him.' : '';
     return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${lead}${deselect}`;
   }
 
+  const fireDiceText = (u) => { const n = fireDice(app.state.balance, u); return `${n} ${n === 1 ? 'die' : 'dice'}`; };
+
   function renderHover() {
+    if (planning() && firefight() && app.selected !== null) $('preview').textContent = hint(unit(app.selected));
     const h = app.hover;
     if (!h || !inBounds(app.state.map, h)) {
       $('status').textContent = 'Click a unit, then a hex to give its order. Space commits all orders. Drag: pan. Wheel: zoom.';
@@ -327,6 +363,12 @@ export function startApp(initialState, { reveal = false } = {}) {
       const end = path[path.length - 1];
       if (!o.moves.some((m) => same(m, end))) marks.push({ hex: end, color: COLORS.fast });
     }
+    const spottedHere = (h) => s.units.some((u) => u.side !== PLAYER_SIDE && spotted(u) && u.status !== 'eliminated' && same(u.pos, h));
+    for (const k of o.fire) {
+      const [col, row] = k.split(',').map(Number);
+      const h = { col, row };
+      marks.push(spottedHere(h) ? { hex: h, color: COLORS.fire, width: 3, fill: COLORS.fireZone } : { hex: h, color: null, fill: COLORS.fireZone, inset: 0 });
+    }
     if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
     if (app.view && app.selected !== null) {
       const from = projectedFor(app.selected).units[app.selected].pos;
@@ -347,10 +389,19 @@ export function startApp(initialState, { reveal = false } = {}) {
       app.plan.forEach((a, i) => {
         if (a.type === 'pass') return;
         const from = projectOrders(s, app.plan.slice(0, i)).units[a.unit].pos;
+        if (a.type === 'fire') {
+          drawFire(ctx, app.cam, from, a.target, !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.fire);
+          return;
+        }
         const path = a.type === 'move' ? [a.to] : a.path;
         const color = !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.move;
         drawPath(ctx, app.cam, from, path, color);
       });
+    }
+
+    app.shots = app.shots.filter((x) => now < x.start + SHOT_MS);
+    for (const x of app.shots) {
+      if (now >= x.start) drawFire(ctx, app.cam, x.from, x.to, x.side === PLAYER_SIDE ? COLORS.blufor : COLORS.opfor, 1 - (now - x.start) / SHOT_MS);
     }
 
     const animating = app.anim.length;
@@ -416,8 +467,9 @@ export function startApp(initialState, { reveal = false } = {}) {
       return;
     }
     if (app.selected !== null) {
+      const why = firefight() ? validateAction(projectedFor(app.selected), { type: 'fire', unit: app.selected, target: h }).reason : null;
       app.message = firefight()
-        ? 'Fire comes in milestone 4. Commit (Space) to end the firefight phase.'
+        ? `Cannot fire there: ${why}. Right click to deselect.`
         : 'That hex is out of reach. Green: move, orange: fast move. Right click to deselect.';
       render();
     }

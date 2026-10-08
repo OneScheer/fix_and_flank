@@ -2,9 +2,11 @@
 // The preview uses the same validation and odds the sim uses.
 
 import { validateAction } from '../sim/actions.js';
+import { fireSolution, pinAt } from '../sim/combat.js';
 import { chanceAtLeast } from '../sim/dice.js';
 import { key } from '../sim/hex.js';
 import { lineOfSight } from '../sim/los.js';
+import { fireOdds } from '../sim/odds.js';
 import { terrainName, terrainOf } from '../sim/map.js';
 import { rallyNeed } from '../sim/phases.js';
 import { knownEnemies } from '../sim/spotting.js';
@@ -55,6 +57,35 @@ export function rallyPreview(state, u) {
   return `Rally phase: ${u.team} needs ${r.need}+ on a d6 to become ${to}, ${inSix(r.need)} (${pct(chanceAtLeast(r.need))}; ${leaderNote(state, r)}).`;
 }
 
+// "4 base, +2 behind a parapet (SE side), +1 range 4 hexes"
+function modText(f, sol) {
+  return [`${f.baseTn} base`, ...sol.mods.map((m) => `${m.mod > 0 ? '+' : ''}${m.mod} ${m.why}`)].join(', ')
+    + (sol.rawTn !== sol.tn ? `, ${sol.rawTn}+ capped at ${sol.tn}+` : '');
+}
+
+// The fire preview: dice, target number with its reasons, and the exact odds.
+// On a hex with no spotted enemy nothing about who may be there is used
+// beyond the map: the odds are for a full team that is not suppressed.
+export function firePreview(state, u, h) {
+  const sol = fireSolution(state, u, h);
+  if (!sol.ok) return `${u.team}: cannot fire there, ${sol.reason}.`;
+  const t = sol.aimed ? state.units[sol.target] : null;
+  const odds = fireOdds({
+    dice: sol.dice, tn: sol.tn, casualtyOn: sol.cover.casualtyOn,
+    pinAt: pinAt(state.balance, t ? t.status : 'ok'), soldiers: t ? t.soldiers.length : state.balance.unit.roles.length,
+  });
+  const head = t
+    ? `${u.team} fires on ${unitName(t)} at ${key(h)} (${terrainName(state.map, h)})`
+    : `${u.team} puts suppressive fire on ${key(h)} (${terrainName(state.map, h)}), no spotted enemy there`;
+  const ifThere = t ? '' : ' If a team is there:';
+  return `${head}: ${sol.dice} dice, hit on ${sol.tn}+ (${modText(state.balance.fire, sol)}).${ifThere}`
+    + ` ${pct(odds.anyHit)} at least one hit, ${pct(odds.pin)} to pin. Casualties on ${sol.cover.casualtyOn}+ (${describeCoverShort(sol)}), expected ${odds.expectedCasualties.toFixed(2)}.`;
+}
+
+function describeCoverShort(sol) {
+  return sol.cover.source === 'hexside' ? `${sol.cover.feature} facing the shooter` : sol.cover.terrain;
+}
+
 // One line saying what the action will do, or why it cannot be done.
 export function previewAction(state, action) {
   const check = validateAction(state, action);
@@ -66,8 +97,10 @@ export function previewAction(state, action) {
       return `${u.team} moves 1 hex to ${where(action.to)}.${exposureNote(state, u, action.to, false)}`;
     case 'fastMove': {
       const end = action.path[action.path.length - 1];
-      return `${u.team} fast moves ${action.path.length} hex${action.path.length > 1 ? 'es' : ''} to ${where(end)}. Exposed until its next activation: easier to spot and to hit.${exposureNote(state, u, end, true)}`;
+      return `${u.team} fast moves ${action.path.length} hex${action.path.length > 1 ? 'es' : ''} to ${where(end)}. Exposed until its next turn: easier to spot and to hit.${exposureNote(state, u, end, true)}`;
     }
+    case 'fire':
+      return firePreview(state, u, action.target);
     case 'pass':
       return `${u.team} ${holdWord(state)}.`;
     default:
@@ -88,6 +121,7 @@ export function eventText(state, e, viewer = null) {
     if (e.type === 'contact_moved') return null;
     return `Suspected position at ${key(e.pos)} dropped (${e.why}).`;
   }
+  if (viewer && e.type === 'fire') return fireText(state, e, viewer);
   if (viewer && u && u.side !== viewer) {
     // Enemy actions: only moves and recovery of an enemy the viewer can see.
     if (!['moved', 'recover'].includes(e.type) || state.contacts?.[viewer]?.[u.id]?.level !== 'spotted') return null;
@@ -97,6 +131,8 @@ export function eventText(state, e, viewer = null) {
       return null;
     case 'moved':
       return `${unitName(u)} moves to ${key(e.to)}.`;
+    case 'fire':
+      return fireText(state, e, null);
     case 'rally':
       if (e.blocked) return `${unitName(u)} cannot rally: enemy adjacent, no SL with it. Still ${e.from}.`;
       if (e.auto) return `${unitName(u)} rallies with ${state.units[e.leader].team}: now ${e.to}.`;
@@ -108,7 +144,7 @@ export function eventText(state, e, viewer = null) {
     case 'turn_start':
       return `Turn ${e.turn}.`;
     case 'phase_start':
-      return phaseText(e);
+      return phaseText(e, viewer);
     case 'rejected':
       return `Not possible: ${e.reason}.`;
     default:
@@ -120,13 +156,40 @@ export function phaseLabel(name) {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-function phaseText(e) {
+// Whether the enemy has anyone able to act is not the viewer's to know.
+function phaseText(e, viewer = null) {
   const label = `${phaseLabel(e.name)} phase (${e.side})`;
-  return e.idle ? `${label}: nobody can act.` : `${label}.`;
+  return e.idle && (!viewer || viewer === e.side) ? `${label}: nobody can act.` : `${label}.`;
 }
 
 export function passText(state, e, viewer = null) {
   if (e.type !== 'activated' || e.action !== 'pass') return null;
   if (viewer && state.units[e.unit].side !== viewer) return null;
   return `${unitName(state.units[e.unit])} ${holdWord(state, e.phase)}.`;
+}
+
+// The fire line: always the dice; the effect only if the viewer can see the
+// target (or it is the viewer's own unit). Enemy fire is told when it hits
+// the viewer's units or the viewer can see the shooter.
+export function fireText(state, e, viewer) {
+  const shooter = state.units[e.unit];
+  const target = e.target === null ? null : state.units[e.target];
+  const known = (u) => !viewer || u.side === viewer || state.contacts?.[viewer]?.[u.id]?.level === 'spotted';
+  const mine = !viewer || shooter.side === viewer;
+  const atMe = target && viewer && target.side === viewer;
+  if (!mine && !atMe && !known(shooter)) return null;
+  const who = mine || known(shooter) ? unitName(shooter) : 'Unseen enemy';
+  const kind = e.aimed ? 'fires on' : 'puts suppressive fire on';
+  const dice = `needs ${e.tn}+, rolled ${e.dice.join(' ')}: ${e.hits ? `${e.hits} hit${e.hits > 1 ? 's' : ''}` : 'no hits'}`;
+  let effect = '';
+  if (e.hits && target && (e.aimed || known(target))) {
+    const rolls = e.casualtyRolls.map((c) => c.roll).join(' ');
+    const lost = e.lost.length ? `lost ${e.lost.join(', ')}` : 'no casualties';
+    effect = e.eliminated
+      ? ` ${unitName(target)} eliminated (casualty rolls ${rolls}, need ${e.casualtyOn}+ ${e.cover}).`
+      : ` ${unitName(target)} ${e.statusTo}; casualty rolls ${rolls} (need ${e.casualtyOn}+, ${e.cover}): ${lost}.`;
+  } else if (e.hits) {
+    effect = ' No visible effect.';
+  }
+  return `${who} ${kind} ${key(e.hex)}: ${dice}.${effect}`;
 }
