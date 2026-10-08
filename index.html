@@ -53,7 +53,33 @@
 
     /* Map and panel */
     main { display: grid; grid-template-columns: minmax(0, 1fr) clamp(340px, 29vw, 500px); min-height: 0; }
+    .boardwrap { position: relative; min-width: 0; min-height: 0; }
     #board { width: 100%; height: 100%; display: block; background: var(--board); touch-action: none; cursor: crosshair; }
+
+    /* Dice tray: over the map, bottom center, while a roll plays */
+    #dice {
+      position: absolute; left: 50%; bottom: 1.25rem; transform: translateX(-50%);
+      min-width: min(26rem, 92%); max-width: 92%; padding: 0.75rem 1rem 0.8rem;
+      background: var(--sheet); border: 2px solid var(--ink); box-shadow: 0 6px 0 rgba(21, 24, 26, 0.18);
+      display: flex; flex-direction: column; gap: 0.45rem; pointer-events: none;
+    }
+    #dice[hidden] { display: none; }
+    .dice-title { font: 700 1.15rem/1.1 var(--display); letter-spacing: 0.04em; text-transform: uppercase; }
+    .dice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+    .dice-label { min-width: 9.5rem; font: 600 0.85rem/1.1 var(--display); letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
+    .dice-note { font-size: 0.9rem; color: var(--muted); font-style: italic; }
+    .die {
+      display: inline-grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+      width: 2.3rem; height: 2.3rem; padding: 0.28rem; gap: 0.08rem;
+      background: #fff; border: 2px solid var(--ink); border-radius: 0.35rem; transition: transform 60ms linear;
+    }
+    .die i { display: block; border-radius: 50%; }
+    .die i.on { background: var(--ink); }
+    .die.hit { background: var(--ink); }
+    .die.hit i.on { background: #fff; }
+    .die.miss { opacity: 0.45; }
+    .dice-result { min-height: 1.3em; font-size: 0.95rem; color: var(--ink-2); }
+    #dice.settled .dice-result { font-weight: 600; color: var(--ink); }
     aside {
       display: flex; flex-direction: column; gap: 1rem; min-height: 0; overflow-y: auto;
       padding: 1rem 1.1rem 1.25rem; background: var(--sheet); border-left: 2px solid var(--ink);
@@ -137,6 +163,7 @@
       header { grid-template-columns: 1fr auto; }
       #phases { grid-column: 1 / -1; grid-row: 2; }
       main { grid-template-columns: 1fr; grid-template-rows: minmax(60vh, 1fr) auto; overflow-y: auto; }
+      .dice-label { min-width: 0; width: 100%; }
       aside { border-left: 0; border-top: 2px solid var(--ink); overflow: visible; }
     }
   </style>
@@ -154,7 +181,10 @@
     </div>
   </header>
   <main>
-    <canvas id="board" aria-label="Map"></canvas>
+    <div class="boardwrap">
+      <canvas id="board" aria-label="Map"></canvas>
+      <div id="dice" hidden aria-live="polite"></div>
+    </div>
     <aside>
       <section id="phaseCard">
         <h2>Orders</h2>

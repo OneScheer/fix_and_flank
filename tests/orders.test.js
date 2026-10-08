@@ -86,3 +86,14 @@ test('committing the same plan from the same seed gives the same result', () => 
   assert.deepEqual(play(), play());
   assert.equal(play().turn, 3);
 });
+
+test('a commit can be followed step by step: the steps add up to the result', () => {
+  const s = squad();
+  const steps = [];
+  const r = commitOrders(s, [move(1, 4, 5), move(0, 3, 5)], createRng(s.rngState), (state, events) => steps.push({ state, events }));
+  assert.ok(steps.length >= 3, 'two orders, then the SL holds');
+  assert.equal(steps[steps.length - 1].state, r.state);
+  assert.deepEqual(steps.flatMap((x) => x.events), r.events);
+  assert.deepEqual(steps[0].state.units[1].pos, H(4, 5), 'after the first order only BRAVO has moved');
+  assert.deepEqual(steps[0].state.units[0].pos, s.units[0].pos);
+});

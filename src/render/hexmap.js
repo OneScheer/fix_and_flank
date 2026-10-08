@@ -46,6 +46,8 @@ export const COLORS = {
   selectHalo: '#f6f4ee',
   invalid: '#ff6a3d',
   fireInk: '#1f3f8f',
+  bang: '#f2b33d',
+  bangCore: '#d9481c',
   hostileFireInk: '#8e1b12',
   move: '#2e7d32',
   fast: '#c8650f',
@@ -313,6 +315,44 @@ export function drawFire(ctx, cam, from, to, color, alpha = 1, tag = null) {
   ctx.restore();
 }
 
+// The label next to a counter: the team's letter, or the leader's name (SL).
+export function counterLabel(unit) {
+  return unit.kind === 'leader' ? unit.team : unit.team.charAt(0);
+}
+
+// A bang: a starburst on a hex that is fired on, popping in and fading.
+// t runs 0..1 over its life; k (0 or 1) picks its spot in the hex.
+export function drawBang(ctx, cam, hex, t, k = 0) {
+  if (t < 0 || t > 1) return;
+  const spot = k ? { x: 0.3, y: 0.2 } : { x: -0.25, y: -0.18 };
+  const c = center(hex);
+  const p = toScreen(cam, c.x + spot.x, c.y + spot.y);
+  const pop = t < 0.15 ? 0.4 + (t / 0.15) * 0.75 : t < 0.3 ? 1.15 - ((t - 0.15) / 0.15) * 0.15 : 1;
+  const alpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+  const R = cam.scale * 0.55 * pop;
+  const star = (outer, inner, n, turn) => {
+    ctx.beginPath();
+    for (let i = 0; i < n * 2; i++) {
+      const r = i % 2 ? inner : outer;
+      const a = (i / (n * 2)) * Math.PI * 2 + turn;
+      i ? ctx.lineTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r) : ctx.moveTo(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r);
+    }
+    ctx.closePath();
+  };
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  star(R, R * 0.5, 9, k * 0.3);
+  ctx.fillStyle = COLORS.bang;
+  ctx.fill();
+  ctx.strokeStyle = COLORS.ink;
+  ctx.lineWidth = Math.max(1.5, cam.scale * 0.045);
+  ctx.stroke();
+  star(R * 0.55, R * 0.28, 7, 0.2 + k * 0.3);
+  ctx.fillStyle = COLORS.bangCore;
+  ctx.fill();
+  ctx.restore();
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -511,7 +551,7 @@ export function drawCounters(ctx, cam, units, rosterOf) {
     echelon(ctx, unit.kind, x0 + w / 2, top - size * 0.16, size);
 
     // Letter (team) or SL to the right of the frame, on a pale plate so it reads on any terrain.
-    const label = leader ? 'SL' : unit.team.charAt(0);
+    const label = counterLabel(unit);
     const fs = Math.max(9, Math.round(size * (leader ? 0.42 : 0.4)));
     ctx.font = `700 ${fs}px ${FONT}`;
     const lx = x0 + w + (unit.side === 'OPFOR' ? h * 0.25 : 0) + size * 0.06;

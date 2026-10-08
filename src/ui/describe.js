@@ -234,8 +234,20 @@ export function assaultText(state, e) {
   const def = e.defendRolls.length
     ? `${unitName(d)} needs ${e.defendTn}+, rolled ${e.defendRolls.join(' ')} (${hitWord(hits(e.defendRolls, e.defendTn))})`
     : `${unitName(d)} pinned, cannot shoot back`;
+  return `${unitName(a)} assaults ${unitName(d)} at ${key(e.hex)}: ${unitName(a)} needs ${e.attackTn}+, rolled ${e.attackRolls.join(' ')} (${hitWord(hits(e.attackRolls, e.attackTn))}); ${def}. ${assaultSummary(state, e)}`;
+}
+
+// Losses and the outcome of an assault, without the dice.
+export function assaultSummary(state, e) {
+  const a = state.units[e.unit];
+  const d = state.units[e.defender];
   const lost = [e.defenderLost.length ? `${unitName(d)} lost ${e.defenderLost.join(', ')}` : null, e.attackerLost.length ? `${unitName(a)} lost ${e.attackerLost.join(', ')}` : null].filter(Boolean);
   const overrun = e.overrun.length ? ` Overrun: ${e.overrun.map((id) => unitName(state.units[id])).join(', ')}.` : '';
-  return `${unitName(a)} assaults ${unitName(d)} at ${key(e.hex)}: ${unitName(a)} needs ${e.attackTn}+, rolled ${e.attackRolls.join(' ')} (${hitWord(hits(e.attackRolls, e.attackTn))}); ${def}.`
-    + `${lost.length ? ` ${lost.join('; ')}.` : ''} ${RESULT_TEXT[e.result](a, d)}${overrun}`;
+  return `${lost.length ? `${lost.join('; ')}. ` : ''}${RESULT_TEXT[e.result](a, d)}${overrun}`;
+}
+
+// What a fire did, as the viewer can know it, without the dice: "2 hits. OPFOR ALPHA pinned; ...".
+export function fireSummary(state, e, viewer) {
+  const line = fireText(state, e, viewer) ?? '';
+  return line.replace(/^.*?rolled [\d ]+: /, '').replace(/^no hits/, 'No hits').replace(/^(\d+ hits?)/, (m) => m.charAt(0).toUpperCase() + m.slice(1));
 }

@@ -15,16 +15,22 @@ import { knownEnemies } from '../sim/spotting.js';
 import { canActivate, currentPhase, unitType, unitsAt } from '../sim/state.js';
 import { chooseOrders } from '../ai/basic.js';
 import { createCamera, fitCamera, panBy, toWorld, zoomAt } from '../render/camera.js';
-import { COLORS, drawCounters, drawFire, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
+import { COLORS, counterLabel, drawBang, drawCounters, drawFire, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
 import { positionAlong } from './anim.js';
-import { eventText, passText, phaseLabel, previewAction, rallyPreview } from './describe.js';
+import { createDiceTray } from './dice.js';
+import { assaultSummary, eventText, fireSummary, passText, phaseLabel, previewAction, rallyPreview, unitName } from './describe.js';
 
 const PLAYER_SIDE = 'BLUFOR';
 const CLICK_SLOP_PX = 4;
 const WHEEL_ZOOM = 1.15;
 const MOVE_ANIM_MS = 220;   // per hex
-const SHOT_MS = 650;        // a line of fire stays this long
-const SHOT_GAP_MS = 300;    // between shots, in the order they were fired
+const DICE_ROLL_MS = 1100;  // dice tumble this long before they settle
+const DICE_STAGGER_MS = 350; // a second row (casualty rolls, the defender) settles this much later
+const DICE_HOLD_MS = 800;   // the settled roll stays on screen this long
+const RALLY_ROLL_MS = 700;
+const RALLY_HOLD_MS = 500;
+const BANG_MS = 900;        // a bang marker's life
+const STEP_GAP_MS = 120;    // between steps without moves
 const AI_DELAY_MS = 450;    // pause before OPFOR commits, so it can be followed
 const MAX_LOG = 200;
 
@@ -41,13 +47,17 @@ export function startApp(initialState, { reveal = false } = {}) {
     plan: [],          // BLUFOR's orders for this turn, in the order they will run
     log: [],
     anim: [],
-    shots: [],         // lines of fire being shown: { from, to, start, side }
+    shots: [],         // lines of fire being shown: { from, to, start, ms, side, tag }
+    bangs: [],         // bang markers being shown: { hex, start, k }
+    playing: false,    // a commit is being played back
+    timers: [],
     fireCache: null,
     hover: null,
     message: '',
     aiPending: false,
   };
   const canvas = $('board');
+  const tray = createDiceTray($('dice'));
   const fit = () => {
     const { width, height } = fitCanvas(canvas);
     fitCamera(app.cam, mapBounds(app.state.map.width, app.state.map.height), width, height);
@@ -55,7 +65,7 @@ export function startApp(initialState, { reveal = false } = {}) {
   fit();
 
   const unit = (id) => app.state.units[id];
-  const planning = () => !app.state.result && app.state.activeSide === PLAYER_SIDE && !app.aiPending && !app.anim.length;
+  const planning = () => !app.playing && !app.state.result && app.state.activeSide === PLAYER_SIDE && !app.aiPending && !app.anim.length;
   const myUnits = () => app.state.units.filter((u) => u.side === PLAYER_SIDE && canActivate(app.state, u));
   const orderIndex = (id) => app.plan.findIndex((a) => a.unit === id);
   const spotted = (u) => app.state.contacts[PLAYER_SIDE]?.[u.id]?.level === 'spotted';
@@ -146,23 +156,68 @@ export function startApp(initialState, { reveal = false } = {}) {
 
   // ---- commit ----
 
-  function run(actions) {
-    const before = app.state;
-    const r = commitOrders(before, actions, createRng(before.rngState));
-    let turn = before.turn;
-    for (const e of r.events) {
-      if (e.type === 'turn_start') turn = e.turn;
-      const line = passText(before, e, PLAYER_SIDE) ?? eventText(r.state, e, PLAYER_SIDE);
+  // ---- playback: one step at a time, dice first, then the result ----
+
+  // Is this event's roll something the player gets to see?
+  const seen = (state, e) => !!eventText(state, e, PLAYER_SIDE);
+  const rolls = (e) => (e.type === 'fire' || e.type === 'assault' || (e.type === 'rally' && e.roll !== null && !e.blocked));
+  const label = (u) => counterLabel(u);
+
+  function diceSpec(state, e) {
+    if (e.type === 'fire') {
+      const shooter = state.units[e.unit];
+      const target = e.target === null ? null : state.units[e.target];
+      const known = target && (target.side === PLAYER_SIDE || e.aimed || state.contacts[PLAYER_SIDE]?.[target.id]?.level === 'spotted');
+      const rows = [{ label: `To hit · needs ${e.tn}+`, values: e.dice, need: e.tn }];
+      if (known && e.casualtyRolls.length) rows.push({ label: `Casualties · needs ${e.casualtyOn}+`, values: e.casualtyRolls.map((c) => c.roll), need: e.casualtyOn });
+      return {
+        title: `${unitName(shooter)} ${e.aimed ? 'fires on' : 'puts suppressive fire on'} ${key(e.hex)}`,
+        rows, result: fireSummary(state, e, PLAYER_SIDE), rollMs: DICE_ROLL_MS, staggerMs: DICE_STAGGER_MS,
+      };
+    }
+    if (e.type === 'assault') {
+      const a = state.units[e.unit];
+      const d = state.units[e.defender];
+      return {
+        title: `${unitName(a)} assaults ${unitName(d)} at ${key(e.hex)}`,
+        rows: [
+          { label: `${unitName(a)} · needs ${e.attackTn}+`, values: e.attackRolls, need: e.attackTn },
+          e.defendRolls.length
+            ? { label: `${unitName(d)} · needs ${e.defendTn}+`, values: e.defendRolls, need: e.defendTn }
+            : { label: unitName(d), values: [], note: 'pinned: cannot shoot back' },
+        ],
+        result: assaultSummary(state, e), rollMs: DICE_ROLL_MS, staggerMs: 0,
+      };
+    }
+    const u = state.units[e.unit];
+    return {
+      title: `${unitName(u)} rallies`,
+      rows: [{ label: `Needs ${e.need}+`, values: [e.roll], need: e.need }],
+      result: e.success ? `Now ${e.to}.` : `Still ${e.from}.`, rollMs: RALLY_ROLL_MS, staggerMs: 0,
+    };
+  }
+
+  // How long a roll stays on screen.
+  const diceMs = (spec) => spec.rollMs + spec.staggerMs * (spec.rows.length - 1) + (spec.rollMs === RALLY_ROLL_MS ? RALLY_HOLD_MS : DICE_HOLD_MS);
+
+  function logStep(before, after, events, turnRef) {
+    for (const e of events) {
+      if (e.type === 'turn_start') turnRef.turn = e.turn;
+      const line = passText(before, e, PLAYER_SIDE) ?? eventText(after, e, PLAYER_SIDE);
       if (!line) continue;
       const kind = e.type === 'game_over' ? 'over' : ['turn_end', 'turn_start', 'phase_start'].includes(e.type) ? 'head' : 'line';
-      app.log.push({ text: line, kind, turn });
+      app.log.push({ text: line, kind, turn: turnRef.turn });
     }
     if (app.log.length > MAX_LOG) app.log.splice(0, app.log.length - MAX_LOG);
-    // Animate the moves one unit after another, in the order they ran, then
-    // show the lines of fire the player could see.
+  }
+
+  // Animate this step's moves (of units the player can see), one unit after another. Returns the time it takes.
+  function animateMoves(state, events) {
     let delay = 0;
     const byUnit = new Map();
-    for (const e of r.events.filter((x) => x.type === 'moved')) {
+    for (const e of events.filter((x) => x.type === 'moved')) {
+      const u = state.units[e.unit];
+      if (u.side !== PLAYER_SIDE && state.contacts[PLAYER_SIDE]?.[u.id]?.level !== 'spotted') continue;
       if (!byUnit.has(e.unit)) byUnit.set(e.unit, [e.from]);
       byUnit.get(e.unit).push(e.to);
     }
@@ -171,15 +226,70 @@ export function startApp(initialState, { reveal = false } = {}) {
       app.anim.push({ id, points: hexes.map(center), start: now + delay });
       delay += (hexes.length - 1) * MOVE_ANIM_MS;
     }
-    for (const e of r.events.filter((x) => x.type === 'fire')) {
-      if (!eventText(r.state, e, PLAYER_SIDE)) continue;
-      const shooter = r.state.units[e.unit];
-      app.shots.push({ from: e.from, to: e.hex, start: now + delay, side: shooter.side, tag: shooter.kind === 'leader' ? 'SL' : shooter.team.charAt(0) });
-      delay += SHOT_GAP_MS;
-    }
-    app.state = r.state;
-    render();
     return delay;
+  }
+
+  // Carry out the orders, then play them back: each step's dice, then its
+  // result on the map, the roster and the log, then its moves. `done` runs at the end.
+  function run(actions, done) {
+    const before = app.state;
+    const steps = [];
+    const final = commitOrders(before, actions, createRng(before.rngState), (state, events) => steps.push({ state, events })).state;
+    app.playing = true;
+    render();
+    const turnRef = { turn: before.turn };
+    let prev = before;
+    let t = 0;
+    const later = (ms, fn) => app.timers.push(setTimeout(fn, ms));
+    for (const step of steps) {
+      const from = prev;
+      for (const e of step.events.filter((x) => rolls(x) && seen(step.state, x))) {
+        const spec = diceSpec(step.state, e);
+        const ms = diceMs(spec);
+        later(t, () => {
+          tray.show(spec);
+          const now = performance.now();
+          if (e.type === 'fire' || e.type === 'assault') {
+            const shooter = step.state.units[e.unit];
+            app.shots.push({ from: e.from, to: e.hex, start: now, ms, side: shooter.side, tag: label(shooter) });
+            app.bangs.push({ hex: e.hex, start: now, k: 0 });
+            const second = e.type === 'assault' || e.hits > 0; // a second bang when the dice show hits
+            if (second) app.bangs.push({ hex: e.hex, start: now + spec.rollMs * 0.85, k: 1 });
+          }
+        });
+        t += ms;
+      }
+      const reveal = t;
+      later(reveal, () => {
+        tray.hide();
+        app.state = step.state;
+        logStep(from, step.state, step.events, turnRef);
+        animateMoves(step.state, step.events);
+        render();
+      });
+      t += Math.max(STEP_GAP_MS, moveTime(step));
+      prev = step.state;
+    }
+    later(t, () => {
+      tray.hide();
+      app.state = final;
+      app.playing = false;
+      app.timers = [];
+      render();
+      done?.();
+    });
+  }
+
+  function moveTime(step) {
+    let ms = 0;
+    const byUnit = new Map();
+    for (const e of step.events.filter((x) => x.type === 'moved')) {
+      const u = step.state.units[e.unit];
+      if (u.side !== PLAYER_SIDE && step.state.contacts[PLAYER_SIDE]?.[u.id]?.level !== 'spotted') continue;
+      byUnit.set(e.unit, (byUnit.get(e.unit) ?? 0) + 1);
+    }
+    for (const n of byUnit.values()) ms += n * MOVE_ANIM_MS;
+    return ms;
   }
 
   function commit() {
@@ -191,14 +301,14 @@ export function startApp(initialState, { reveal = false } = {}) {
       return;
     }
     app.message = '';
-    const delay = run(app.plan);
+    const plan = app.plan;
     app.plan = [];
-    enemyTurn(delay);
+    app.selected = null;
+    run(plan, enemyTurn);
   }
 
-  function enemyTurn(delay) {
+  function enemyTurn() {
     if (app.state.activeSide === PLAYER_SIDE || app.state.activeSide === null) {
-      app.selected = null;
       render();
       return;
     }
@@ -207,9 +317,8 @@ export function startApp(initialState, { reveal = false } = {}) {
     setTimeout(() => {
       app.aiPending = false;
       const side = app.state.activeSide;
-      const d = run(chooseOrders(app.state, side));
-      enemyTurn(d);
-    }, AI_DELAY_MS + delay);
+      run(chooseOrders(app.state, side), enemyTurn);
+    }, AI_DELAY_MS);
   }
 
   function toggleView() {
@@ -229,13 +338,16 @@ export function startApp(initialState, { reveal = false } = {}) {
   function orderLine(u) {
     const i = orderIndex(u.id);
     if (!canActivate(app.state, u)) {
-      return rallyPreview(app.state, u) ?? (u.moved ? 'moved: cannot fire this turn' : u.reload > 0 ? 'reloading: fires again next turn' : '');
+      return rallyPreview(app.state, u) ?? (u.moved ? 'moved: cannot fire this turn' : reloading(u) ? `reloading: cannot fire ${u.fired ? 'next' : 'this'} turn` : '');
     }
     if (i === -1) return firefight() ? 'no order: holds fire' : 'no order: holds';
     const check = checkPlan(app.state, app.plan)[i];
     return check.ok ? `${i + 1}. ${previewAction(projectedFor(u.id), app.plan[i]).replace(new RegExp(`^${u.team} `), '')}` : `${i + 1}. NOT POSSIBLE: ${check.reason}`;
   }
 
+  // Still reloading on its side's next turn (the HMG after firing). Every unit's
+  // reload runs until its side's next turn starts; only one that lasts longer is shown.
+  const reloading = (u) => (u.fired ? u.reload > 1 : u.reload > 0);
   const firefight = () => !(currentPhase(app.state).actions ?? []).includes('move');
 
   function activeText() {
@@ -324,7 +436,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     }
     if (u.exposed) roles.append(el('span', '', 'exposed'));
     who.append(name, roles);
-    const status = u.status !== 'ok' ? u.status : u.moved ? 'moved' : u.reload > 0 ? 'reloading' : 'ready';
+    const status = u.status !== 'ok' ? u.status : u.moved ? 'moved' : reloading(u) ? 'reloading' : 'ready';
     const tag = el('span', `tag ${u.status}`, status);
     const order = el('div', 'order', u.status === 'eliminated' ? '' : orderLine(u));
     if (order.textContent.includes('NOT POSSIBLE')) order.classList.add('bad');
@@ -500,10 +612,13 @@ export function startApp(initialState, { reveal = false } = {}) {
     drawCounters(ctx, app.cam, counters, (u) => unitType(s.balance, u).roles);
 
     for (const f of overlay) f();
-    app.shots = app.shots.filter((x) => now < x.start + SHOT_MS);
+    app.shots = app.shots.filter((x) => now < x.start + x.ms);
     for (const x of app.shots) {
-      if (now >= x.start) drawFire(ctx, app.cam, x.from, x.to, x.side === PLAYER_SIDE ? COLORS.fireInk : COLORS.hostileFireInk, 1 - (now - x.start) / SHOT_MS, x.tag);
+      const t = (now - x.start) / x.ms;
+      if (t >= 0) drawFire(ctx, app.cam, x.from, x.to, x.side === PLAYER_SIDE ? COLORS.fireInk : COLORS.hostileFireInk, t < 0.75 ? 1 : (1 - t) * 4, x.tag);
     }
+    app.bangs = app.bangs.filter((b) => now < b.start + BANG_MS);
+    for (const b of app.bangs) drawBang(ctx, app.cam, b.hex, (now - b.start) / BANG_MS, b.k);
   }
 
   // ---- input ----

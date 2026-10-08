@@ -10,7 +10,9 @@ import { canActivate, cloneState } from './state.js';
 
 // Carry out `actions` (in order) in the current phase, then make every unit
 // without an order hold, which ends the phase. Returns { state, events }.
-export function commitOrders(state, actions, rng) {
+// `onStep(state, events)`, if given, is told the state after each step, so a
+// UI can play the commit back one order at a time.
+export function commitOrders(state, actions, rng, onStep = null) {
   const same = (s) => s.turn === state.turn && s.phase === state.phase;
   let current = state;
   const events = [];
@@ -19,12 +21,14 @@ export function commitOrders(state, actions, rng) {
     const r = applyAction(current, action, rng);
     current = r.state;
     events.push(...r.events);
+    onStep?.(current, r.events);
   }
   while (same(current)) {
     const idle = current.units.find((u) => canActivate(current, u));
     const r = idle ? applyAction(current, { type: 'pass', unit: idle.id }, rng) : skipPhase(current, rng);
     current = r.state;
     events.push(...r.events);
+    onStep?.(current, r.events);
     if (!idle) break;
   }
   return { state: current, events };
