@@ -101,6 +101,7 @@ function moveLine(state, side, team, plan, order) {
   if (exposure.tiles > 0) {
     notes.push(`Route crosses about ${exposure.meters} m of open ground in view of known enemy positions.`);
   }
+  if (order.holdFire) notes.push('Holding fire: will not shoot until given a fire, suppress or assault order.');
   const verb = order.type === 'assault' ? `assault ${describePoint(state, side, order.at, order.target)}: run` : `${speed} to ${dest.x},${dest.y}${viaText(order.via)}.`;
   const text = order.type === 'assault'
     ? `${team}: ${verb} ${meters} m, about ${roundSec(sec)} s, ${arrival(sec, state.balance.turn.durationSec)}.`
@@ -132,10 +133,13 @@ function fireLines(fx, team, task, members) {
     const where = describePoint(state, side, task.at, task.target);
     if (!firing.length) return { text: `${team}: suppress ${where}. Nobody has a line of fire: no fire.`, notes };
     const perSec = firing.reduce((a, s) => a + suppressionPerSec(state, s, 'suppress'), 0);
-    const hitters = firing.map((s) => actions.get(s.id)).filter((a) => a.target);
+    // Only talk about hits on an enemy the side has spotted: the sim knows
+    // where everyone is, the player must not learn it from the preview.
+    const hitters = firing.map((s) => actions.get(s.id))
+      .filter((a) => a.target && state.contacts[side]?.[a.target.id]?.level === 'spotted');
     const hits = hitters.length
-      ? `Can hit the exposed soldier there at ${span(hitters.map((a) => a.chance), pct)} per round.`
-      : 'No exposed enemy at the point: suppression only, no hits.';
+      ? `Can hit the spotted enemy there at ${span(hitters.map((a) => a.chance), pct)} per round.`
+      : 'Hits only on exposed soldiers near the point, if any, at reduced accuracy.';
     notes.push(ammoNote(state, firing, 'suppress'));
     return {
       text: `${team}: suppress ${where}. ${firing.length} of ${members.length} have a line of fire, about ${Math.round(perSec)} suppression per second on the point. ${hits}`,
@@ -233,7 +237,7 @@ export function previewTurn(state, side, orders) {
     }
 
     // Fire, suppress, overwatch (new or continuing), or nothing new.
-    const task = members.find((s) => s.task && s.task.type !== 'grenade' && s.task.type !== 'assault')?.task;
+    const task = members.find((s) => s.task && ['fire', 'suppress', 'overwatch'].includes(s.task.type))?.task;
     if (task) {
       const f = fireLines(fx, team, task, members.filter((s) => s.task?.type === task.type));
       if (!order) f.text = f.text.replace(`${team}: `, `${team}: continuing `);
@@ -245,10 +249,12 @@ export function previewTurn(state, side, orders) {
       const sec = Math.max(...moving.map((s) => remainingMoveSec(state, s)));
       const lead = moving.find((s) => s.role === 'TL') ?? moving[0];
       const what = lead.task?.type === 'assault' ? 'assault' : lead.move.speed;
-      add(`${team}: continuing ${what} to ${lead.move.dest.x},${lead.move.dest.y}. About ${roundSec(sec)} s left, ${arrival(sec, durationSec)}.`);
+      const quiet = lead.task?.type === 'hold_fire' ? ' Holding fire.' : '';
+      add(`${team}: continuing ${what} to ${lead.move.dest.x},${lead.move.dest.y}. About ${roundSec(sec)} s left, ${arrival(sec, durationSec)}.${quiet}`);
       continue;
     }
-    add(`${team}: holding. Fires at will.`);
+    if (members.some((s) => s.task?.type === 'hold_fire')) add(`${team}: in position, holding fire. Give a fire, suppress or assault order to open up.`);
+    else add(`${team}: holding. Fires at will.`);
   }
   return { lines, plans: fx.plans, actions: fx.actions, noFire: fx.noFire, state: fx.state };
 }

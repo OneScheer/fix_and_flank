@@ -204,3 +204,31 @@ test('the preview does not change the state it looks at', () => {
   previewTurn(s, 'BLUFOR', [B('ALPHA', 'grenade', { at: { x: 20, y: 12 } })]);
   assert.deepEqual({ soldiers: s.soldiers, contacts: s.contacts, grenades: s.grenades }, before);
 });
+
+test('the preview never gives away an enemy the side has not spotted', () => {
+  // Same order on the same tile, with and without a hidden enemy standing there.
+  const make = (withEnemy) => makeState(grass(30, 10), [
+    unit('BLUFOR', 'ALPHA', 'RFL', 0, 5),
+    ...(withEnemy ? [unit('OPFOR', 'ALPHA', 'RFL', 20, 5, 'stand')] : [unit('OPFOR', 'ALPHA', 'RFL', 29, 9)]),
+  ]);
+  for (const order of [B('ALPHA', 'suppress', { at: { x: 20, y: 5 } }), B('ALPHA', 'grenade', { at: { x: 10, y: 5 } })]) {
+    const a = previewTurn(make(true), 'BLUFOR', [order]).lines;
+    const b = previewTurn(make(false), 'BLUFOR', [order]).lines;
+    assert.deepEqual(a, b, order.type);
+  }
+});
+
+test('hold fire: a moving team does not shoot, and opens up on its next fire order', () => {
+  const s = makeState(grass(40, 10), [unit('BLUFOR', 'ALPHA', 'RFL', 0, 5), unit('OPFOR', 'ALPHA', 'RFL', 20, 5, 'stand')]);
+  s.soldiers[1].ammo = 0;
+  spot(s, 1);
+  const order = B('ALPHA', 'move', { dest: { x: 10, y: 5 }, speed: 'walk', holdFire: true });
+  assert.ok(previewTurn(s, 'BLUFOR', [order]).lines[0].notes.some((n) => n.startsWith('Holding fire')));
+  let r = resolveTurn(s, [order]);
+  assert.equal(r.events.filter((e) => e.type === 'fire').length, 0);
+  r = resolveTurn(r.state, []);
+  assert.equal(r.events.filter((e) => e.type === 'fire').length, 0, 'still holding after arriving');
+  r.state.contacts.BLUFOR[1] = { level: 'spotted', pos: { x: 20, y: 5 }, lastSeenSec: 0 };
+  r = resolveTurn(r.state, [B('ALPHA', 'fire', { target: 1 })]);
+  assert.ok(r.events.some((e) => e.type === 'fire' && e.id === 0));
+});

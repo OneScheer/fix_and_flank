@@ -2,7 +2,7 @@
 // executed per soldier. planOrders is used both by the sim and by the UI
 // preview, so the preview always shows what the sim will do.
 //
-// { type: 'move', side, team, dest: {x, y}, speed: 'walk' | 'run' | 'crawl', via?: [{x, y}] }
+// { type: 'move', side, team, dest: {x, y}, speed: 'walk' | 'run' | 'crawl', via?: [{x, y}], holdFire?: true }
 // { type: 'hold', side, team }                       stop; fire at will
 // { type: 'fire', side, team, target: enemyId }      aimed fire on a spotted contact
 // { type: 'suppress', side, team, at: {x, y}, target?: enemyId }
@@ -16,7 +16,8 @@
 // `via` is an optional list of waypoints the team leader passes through, in
 // order, before the destination. Orders persist across turns until the team
 // gets a new order (a move ends when the team arrives; a grenade when it is
-// thrown). Teams with no fire task fire at will.
+// thrown). Teams with no fire task fire at will; a move with holdFire does
+// not shoot at all (a flanking element staying hidden) until its next order.
 
 import { inBounds, isPassable, stepCost, tileAt } from './map.js';
 import { planGrenade } from './grenade.js';
@@ -276,7 +277,7 @@ export function applyOrders(state, orders, events) {
         const s = byId.get(p.id);
         s.task = order.type === 'assault'
           ? { type: 'assault', at: { ...order.at }, target: order.target ?? null }
-          : null;
+          : (order.holdFire ? { type: 'hold_fire' } : null);
         if (!p.path) {
           s.move = null;
           events.push({ type: 'order_failed', id: s.id, reason: p.reason });

@@ -13,6 +13,7 @@
 //                        faster and less accurate, can hit exposed soldiers
 //                        near the point, suppresses everyone near it
 //   assault              fire on the move; close assault anyone within reach
+//   hold_fire            no fire at all (a move ordered with holdFire)
 //   grenade              the thrower throws (grenade.js)
 // Fire within a tick is simultaneous: all actions are chosen from the state
 // before anyone acts, then resolved in soldier id order.
@@ -252,6 +253,7 @@ export function decideActions(state, movedSpeed, events) {
     const task = s.task;
     const movement = movedSpeed.get(s.id) ?? 'still';
 
+    if (task?.type === 'hold_fire') continue;
     if (task?.type === 'grenade') {
       if (s.status !== 'pinned') actions.push({ kind: 'grenade', s });
       continue;
