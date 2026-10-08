@@ -1,6 +1,5 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseOrders } from '../src/ai/basic.js';
 import { applyAction } from '../src/sim/actions.js';
 import { createRng } from '../src/sim/rng.js';
 import { commitOrders } from '../src/sim/orders.js';
@@ -44,9 +43,6 @@ test('log lines report the dice and the phases', () => {
   assert.ok(lines.includes('Enemy action phase (OPFOR).'));
 });
 
-test('the placeholder OPFOR gives no orders: all its units hold', () => {
-  assert.deepEqual(chooseOrders(squad(), 'OPFOR'), []);
-});
 
 test('the log only tells BLUFOR what it knows', () => {
   // OPFOR in a trench, unseen: its hold and its moves stay out of BLUFOR's log.

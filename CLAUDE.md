@@ -159,7 +159,14 @@ Every action can be replayed with its dice and an explanation (target number and
 
 Scripted behavior per enemy fireteam, using the **same visibility and rules as the player**, no cheating.
 
-States: `HOLD` (dug in, fire on spotted targets), `ENGAGED` (taking fire, return fire on known contacts), `SUPPRESSED` (pinned: wait to recover), `REPOSITION` (move to better cover), `COUNTER_FLANK` (move against the player's maneuver element if it has enough unsuppressed soldiers), `RETREAT`.
+Each enemy unit picks one mode per enemy action phase (`src/ai/basic.js`, numbers in `balance.ai`), first that applies:
+
+- `SUPPRESSED`: suppressed or pinned, it spends the phase recovering.
+- `COUNTER_FLANK`: assault a spotted team in the next hex when the odds to take it are good; or, sometimes (a chance per phase), move against a weakened team close by (suppressed, pinned or fewer men) and assault it when next to it.
+- `RETREAT`: down to its last man, move away from known enemies.
+- `ENGAGED`: aimed fire on the best spotted target within its open-fire range (expected casualties plus a weight for the chance to pin).
+- `REPOSITION`: in poor cover against the nearest known enemy, move to a next hex with good cover that is not next to an enemy.
+- `HOLD`: stay put and hold fire; firing would give it away.
 
 Design goal: the AI reacts sensibly to suppression and sometimes counterattacks, so the same plan does not win every time. Difficulty levels change aggression and dice modifiers, not information.
 

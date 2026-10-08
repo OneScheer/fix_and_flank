@@ -56,6 +56,18 @@
     "dugInMod": -1,
     "defenderSuppressedMod": 1
   },
+  "ai": {
+    "openFireRange": 6,
+    "pinWeight": 0.5,
+    "assaultTakeAtLeast": 0.6,
+    "counterattackRange": 3,
+    "counterattackChance": 0.35,
+    "counterattackMinSoldiers": 3,
+    "counterattackTakeAtLeast": 0.4,
+    "retreatAtSoldiers": 1,
+    "goodCover": 5,
+    "seedSalt": 2654435769
+  },
   "rally": {
     "worstOn": 6
   },

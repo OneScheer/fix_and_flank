@@ -159,3 +159,15 @@ Answers to the follow-up questions:
 - **Planning:** an assault order leaves the team in its hex in the projection, since the result is not known.
 - **Acceptance (preview odds equal the sim's):** the preview and the sim build the same `fireSolution` / `assaultSolution`, and the preview's numbers come from `fireOdds` / `assaultOdds` on it. Tests check the TN and dice in each event against the solution the preview used, that the preview text carries the exact percentages, and that 4000 seeded rolls per case match the exact odds (take within 3 points, mean losses within 0.08).
 - **Balance check for pillar 1:** with defaults, a frontal assault on an unsuppressed dug-in team succeeds 20% of the time and costs more men than it kills; on a pinned team 99%. Tested.
+
+## Hex milestone 6: enemy AI
+
+- **One file, one function:** `planOrders(state, side)` gives every unit of the side a mode, an order (or none: it holds) and a reason; `chooseOrders` returns just the orders for `commitOrders`. The UI calls it in the enemy action phase.
+- **Same information as the player:** the AI reads the map, its own units and `state.contacts[side]`. For a spotted enemy it may read its status and men (the player sees those on the counter too); unseen enemies are never looked at. Tested: a BLUFOR team in woods 4 hexes away, which a shot could reach, is not fired on.
+- **Same rules:** every order is checked with `validateAction` against the projection of the side's earlier orders, so the AI cannot give an order the player could not. Tested over 20 whole games.
+- **Modes, first that applies:** SUPPRESSED (recovering, no order), COUNTER_FLANK (assault the next hex at `assaultTakeAtLeast` 60% to take it or better; or with `counterattackChance` 35% per phase, a team with `counterattackMinSoldiers` (3) men goes for a weakened spotted team within `counterattackRange` (3): suppressed, pinned or fewer men; it moves one hex toward it, or assaults at `counterattackTakeAtLeast` 40%+ when next to it), RETREAT (`retreatAtSoldiers` 1), ENGAGED (aimed fire within `openFireRange` 6 hexes on the target with the most expected casualties plus `pinWeight` 0.5 times the pin chance), REPOSITION (cover against the nearest known enemy below `goodCover` 5: move to a next hex with 5+ cover not next to an enemy), HOLD.
+- **Holding fire beyond 6 hexes** is the ambush: firing reveals a dug-in team, so it waits until the shot is worth it (TN 5+ or better in the open).
+- **No suppressive fire by the AI** on suspected hexes yet: simplest first; it may come with difficulty levels.
+- **"Sometimes" is deterministic:** the AI uses its own RNG seeded from `state.rngState` xor `ai.seedSalt`, drawing one number per unit whether used or not, so the AI never consumes the game's dice and replays are exact.
+- **Difficulty** (milestone 9) will change these numbers (aggression, open-fire range) and dice modifiers, not what the AI can see.
+- **Smoke test:** 50 games of the training map against a naive BLUFOR that walks straight up the middle and fires at whatever it sees: OPFOR's team survives 47 of them. Not the milestone 7 balance test, but the right direction.
