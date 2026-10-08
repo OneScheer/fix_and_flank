@@ -214,3 +214,11 @@ Answers to the follow-up questions:
 - Layout fills the window: a slim header (mission, phase track as a segmented bar, turn of limit and contacts), the map filling the rest, a side panel `clamp(340px, 29vw, 500px)` wide. The camera fits the map with a 1.5% margin and refits on resize. Root font size scales with the window. Below 900 px wide the panel goes under the map.
 - Side panel: phase card; a roster card per unit (small counter, role pips, status tag, its order); the preview box; Hold / Clear all / Line of sight; Commit; the log as separate lines with turn chips; "How to play" folded away.
 - Map palette made lighter (printed-map look) so ink counters stand out; move, fast move and fire highlights recolored for light ground; the selected counter gets a dashed ink outline on a pale halo.
+
+## HMG team (user request)
+
+- The user first asked for squads (three squads of 4 HP with a PL), then stopped that and asked to keep fireteams and add a third element, an HMG. The squad change was discarded before it was committed.
+- **Unit types** (`balance.unitTypes`): a unit may carry `type`; the type overrides the fireteam defaults (`unitType()` in `state.js`): roles and casualty order, fast move allowed, may assault, range bands and maximum range, `fireEveryTurns`.
+- **HMG team:** crew GNR, AG, AMMO (3 HP); dice GNR 4, AG 1, AMMO 1 = 6; casualty order AMMO, AG, GNR; range bands +0 to 6 hexes, +1 to 12, max 12; no fast move; no assault (an adjacent enemy cannot be engaged by it at all); NATO counter with the machine-gun arrow. Rally, suppression and pinning as for any team.
+- **Balance (user request):** with the HMG firing every turn, fix and flank won 98% of mission 1 (frontal 2%). The HMG now fires only every other turn (`fireEveryTurns` 2: after firing it sits out its side's next turn; `reload` counts down at the start of each of its side's turns). Result over seeds 1-200: frontal 2.0%, fix and flank 91.0%. Without the HMG it was 74.5%.
+- Mission 1: the HMG starts on the track by the farm (4,13) and in the fix-and-flank plan joins ALPHA at the wall (4,10) as the base of fire; in the frontal plan it walks in with everyone else.

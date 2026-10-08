@@ -5,7 +5,7 @@
 // from the map's "drills" entry:
 //   "drills": {
 //     "frontal": { "ALPHA": [[col, row], ...], "BRAVO": [...], "SL": [...] },
-//     "fixAndFlank": { "baseOfFire": "ALPHA", "maneuver": "BRAVO", "leaderWith": "BRAVO",
+//     "fixAndFlank": { "baseOfFire": ["ALPHA", "HMG"], "maneuver": "BRAVO", "leaderWith": "BRAVO",
 //                      "closeIn": 6, "routes": { "ALPHA": [...], "BRAVO": [...] } }
 //   }
 // A route is a list of waypoints; the last one is where the unit goes to
@@ -111,6 +111,7 @@ function fireAtSpotted(s, u) {
 // enemy is suppressed or pinned (or in the last `lastTurns` turns + 1).
 export function fixAndFlank(drills) {
   const { baseOfFire, maneuver, leaderWith, routes, closeIn = 6, lastTurns = 1 } = drills.fixAndFlank;
+  const bases = [].concat(baseOfFire); // one team or several
   const route = router(routes);
   return (state) => {
     const obj = objectiveOf(state);
@@ -126,9 +127,9 @@ export function fixAndFlank(drills) {
       if (phase === 'movement') {
         if (!r.next) return null;
         const far = (distanceField(s.map, s.balance, obj).get(key(u.pos)) ?? Infinity) > closeIn;
-        return stepToward(s, u, r.next, far || u.team === baseOfFire);
+        return stepToward(s, u, r.next, far || bases.includes(u.team));
       }
-      if (u.team === baseOfFire && r.atEnd) return { type: 'fire', unit: u.id, target: obj };
+      if (bases.includes(u.team) && r.atEnd) return { type: 'fire', unit: u.id, target: obj };
       return null; // the maneuver element stays hidden; it assaults below, after the base of fire
     });
     if (phase === 'firefight') {

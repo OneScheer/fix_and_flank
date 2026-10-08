@@ -11,22 +11,22 @@
 // SL if he is alone there): 1 hit suppresses (pins if already suppressed),
 // fire.pinHits or more pin. Each hit then rolls for a casualty against the
 // target's directional cover (coverAgainst): a success removes a soldier in
-// unit.casualtyOrder. A unit with nobody left is eliminated.
+// casualty order of its unit type. A unit with nobody left is eliminated.
 
 import { coverAgainst, describeCover } from './cover.js';
 import { rollD6 } from './dice.js';
 import { distance, same } from './hex.js';
 import { lineOfSight } from './los.js';
 import { inBounds } from './map.js';
-import { isSuppressed, unitsAt } from './state.js';
+import { isSuppressed, unitType, unitsAt } from './state.js';
 
 export function fireDice(balance, unit) {
   return unit.soldiers.reduce((n, role) => n + (balance.fire.diceByRole[role] ?? 1), 0);
 }
 
-// Range modifier, or null beyond the last band.
-export function rangeMod(balance, range) {
-  return balance.fire.range.find((b) => range <= b.upTo)?.mod ?? null;
+// Range modifier for this shooter (its unit type's range bands), or null beyond the last band.
+export function rangeMod(balance, range, shooter = { kind: 'team', type: null }) {
+  return unitType(balance, shooter).range.find((b) => range <= b.upTo)?.mod ?? null;
 }
 
 // Everything about a shot before the dice: { ok, reason } or
@@ -40,8 +40,9 @@ export function fireSolution(state, shooter, hex) {
   if (!hex || !inBounds(map, hex)) return { ok: false, reason: 'off the map' };
   if (same(shooter.pos, hex)) return { ok: false, reason: 'cannot fire at its own hex' };
   const range = distance(shooter.pos, hex);
-  const rmod = rangeMod(balance, range);
-  if (range > f.maxRangeHexes || rmod === null) return { ok: false, reason: `out of range (${f.maxRangeHexes} hexes)` };
+  const rmod = rangeMod(balance, range, shooter);
+  const maxRange = unitType(balance, shooter).maxRangeHexes;
+  if (range > maxRange || rmod === null) return { ok: false, reason: `out of range (${maxRange} hexes)` };
   const los = lineOfSight(map, balance, shooter.pos, hex);
   if (!los.clear) return { ok: false, reason: `no line of sight (${los.reason})` };
   const here = unitsAt(state, hex);
@@ -70,7 +71,7 @@ export function pinAt(balance, status) {
 }
 
 function removeSoldier(balance, unit) {
-  const role = balance.unit.casualtyOrder.find((r) => unit.soldiers.includes(r)) ?? unit.soldiers[0];
+  const role = unitType(balance, unit).casualtyOrder.find((r) => unit.soldiers.includes(r)) ?? unit.soldiers[0];
   unit.soldiers.splice(unit.soldiers.indexOf(role), 1);
   return role;
 }

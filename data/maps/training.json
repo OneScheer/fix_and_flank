@@ -31,6 +31,7 @@
     { "side": "BLUFOR", "team": "ALPHA", "pos": [4, 11] },
     { "side": "BLUFOR", "team": "BRAVO", "pos": [6, 11] },
     { "side": "OPFOR", "team": "ALPHA", "pos": [4, 2] },
-    { "side": "BLUFOR", "team": "SL", "kind": "leader", "pos": [5, 11] }
+    { "side": "BLUFOR", "team": "SL", "kind": "leader", "pos": [5, 11] },
+    { "side": "BLUFOR", "team": "HMG", "type": "hmg", "pos": [3, 11] }
   ]
 }

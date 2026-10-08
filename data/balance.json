@@ -28,6 +28,21 @@
       "SL"
     ]
   },
+  "unitTypes": {
+    "hmg": {
+      "name": "HMG team",
+      "roles": ["GNR", "AG", "AMMO"],
+      "casualtyOrder": ["AMMO", "AG", "GNR"],
+      "fastMove": false,
+      "assault": false,
+      "fireEveryTurns": 2,
+      "maxRangeHexes": 12,
+      "range": [
+        { "upTo": 6, "mod": 0 },
+        { "upTo": 12, "mod": 1 }
+      ]
+    }
+  },
   "movement": {
     "fastMoveHexes": 2
   },
@@ -36,7 +51,7 @@
     "minTn": 2,
     "maxTn": 6,
     "maxRangeHexes": 10,
-    "diceByRole": { "TL": 1, "AR": 2, "GRN": 1, "RFL": 1, "SL": 1 },
+    "diceByRole": { "TL": 1, "AR": 2, "GRN": 1, "RFL": 1, "SL": 1, "GNR": 4, "AG": 1, "AMMO": 1 },
     "range": [
       { "upTo": 3, "mod": 0 },
       { "upTo": 6, "mod": 1 },

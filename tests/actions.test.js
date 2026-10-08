@@ -163,12 +163,12 @@ test('move options: 6 neighbors for a move, more hexes for a fast move, rough te
 // ---- determinism ----
 
 test('replaying the same orders gives the same states and events', () => {
-  // Training map ids: BLUFOR ALPHA 0, BRAVO 1, OPFOR ALPHA 2, BLUFOR SL 3.
+  // Training map ids: BLUFOR ALPHA 0, BRAVO 1, OPFOR ALPHA 2, BLUFOR SL 3, BLUFOR HMG 4.
   const plans = [
     // Everyone moves, so the firefight phase is skipped: movement, then enemy action.
-    [{ type: 'fastMove', unit: 0, path: [H(4, 10), H(4, 9)] }, move(1, 6, 10), move(3, 5, 10)],
+    [{ type: 'fastMove', unit: 0, path: [H(4, 10), H(4, 9)] }, move(1, 6, 10), move(3, 5, 10), move(4, 3, 10)],
     [],
-    [{ type: 'fastMove', unit: 0, path: [H(4, 8), H(4, 7)] }, move(1, 6, 9), { type: 'fastMove', unit: 3, path: [H(5, 9), H(5, 8)] }],
+    [{ type: 'fastMove', unit: 0, path: [H(4, 8), H(4, 7)] }, move(1, 6, 9), { type: 'fastMove', unit: 3, path: [H(5, 9), H(5, 8)] }, move(4, 3, 9)],
     [],
   ];
   const play = (seed) => {

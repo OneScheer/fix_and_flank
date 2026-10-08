@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import { parseMap, terrainName, terrainOf } from '../src/sim/map.js';
 import { H, LEGEND, balance, loadJson, makeMap } from './helpers.js';
 
-test('training map parses: 12 x 12 hexes, a BLUFOR squad and a dug-in OPFOR team', () => {
+test('training map parses: 12 x 12 hexes, a BLUFOR squad with an HMG and a dug-in OPFOR team', () => {
   const map = parseMap(loadJson('data/maps/training.json'), balance);
   assert.equal(map.width, 12);
   assert.equal(map.height, 12);
-  assert.equal(map.units.filter((u) => u.side === 'BLUFOR' && (u.kind ?? 'team') === 'team').length, 2);
+  assert.equal(map.units.filter((u) => u.side === 'BLUFOR' && (u.kind ?? 'team') === 'team').length, 3);
+  assert.equal(map.units.filter((u) => u.type === 'hmg').length, 1, 'one of them the HMG team');
   assert.equal(map.units.filter((u) => u.kind === 'leader').length, 1, 'and the SL');
   const opfor = map.units.find((u) => u.side === 'OPFOR');
   assert.equal(terrainName(map, H(...opfor.pos)), 'trench');

@@ -17,7 +17,7 @@ import { coverAgainst, describeCover } from './cover.js';
 import { rollD6 } from './dice.js';
 import { distance } from './hex.js';
 import { inBounds } from './map.js';
-import { isActive, isSuppressed, unitsAt } from './state.js';
+import { isActive, isSuppressed, unitType, unitsAt } from './state.js';
 
 const clamp = (balance, tn) => Math.min(balance.fire.maxTn, Math.max(balance.fire.minTn, tn));
 
@@ -47,6 +47,7 @@ export function assaultSolution(state, attacker, h) {
   if (!enemies.length) return { ok: false, reason: 'no enemy there' };
   if (distance(attacker.pos, h) !== 1) return { ok: false, reason: 'an assault goes into the next hex' };
   if (attacker.kind !== 'team') return { ok: false, reason: 'only a fireteam can assault' };
+  if (!unitType(balance, attacker).assault) return { ok: false, reason: `the ${unitType(balance, attacker).name} does not assault` };
   const defender = enemies.find((u) => u.kind === 'team') ?? enemies[0];
   const others = enemies.filter((u) => u.id !== defender.id).map((u) => u.id);
 
@@ -86,7 +87,7 @@ export function assaultOutcome(attackerLeft, defenderLeft) {
 function removeSoldiers(balance, unit, n) {
   const lost = [];
   for (let i = 0; i < n && unit.soldiers.length; i++) {
-    const role = balance.unit.casualtyOrder.find((r) => unit.soldiers.includes(r)) ?? unit.soldiers[0];
+    const role = unitType(balance, unit).casualtyOrder.find((r) => unit.soldiers.includes(r)) ?? unit.soldiers[0];
     unit.soldiers.splice(unit.soldiers.indexOf(role), 1);
     lost.push(role);
   }

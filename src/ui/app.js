@@ -12,7 +12,7 @@ import { fireDice } from '../sim/combat.js';
 import { checkPlan, commitOrders, projectOrders } from '../sim/orders.js';
 import { createRng } from '../sim/rng.js';
 import { knownEnemies } from '../sim/spotting.js';
-import { canActivate, currentPhase, unitsAt } from '../sim/state.js';
+import { canActivate, currentPhase, unitType, unitsAt } from '../sim/state.js';
 import { chooseOrders } from '../ai/basic.js';
 import { createCamera, fitCamera, panBy, toWorld, zoomAt } from '../render/camera.js';
 import { COLORS, drawCounters, drawFire, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
@@ -228,7 +228,9 @@ export function startApp(initialState, { reveal = false } = {}) {
 
   function orderLine(u) {
     const i = orderIndex(u.id);
-    if (!canActivate(app.state, u)) return rallyPreview(app.state, u) ?? (u.moved ? 'moved: cannot fire this turn' : '');
+    if (!canActivate(app.state, u)) {
+      return rallyPreview(app.state, u) ?? (u.moved ? 'moved: cannot fire this turn' : u.reload > 0 ? 'reloading: fires again next turn' : '');
+    }
     if (i === -1) return firefight() ? 'no order: holds fire' : 'no order: holds';
     const check = checkPlan(app.state, app.plan)[i];
     return check.ok ? `${i + 1}. ${previewAction(projectedFor(u.id), app.plan[i]).replace(new RegExp(`^${u.team} `), '')}` : `${i + 1}. NOT POSSIBLE: ${check.reason}`;
@@ -298,6 +300,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     const fill = u.status === 'eliminated' ? '#b9b5a8' : COLORS.blufor;
     svg.append(svgEl('rect', { x: 2, y: 15, width: 58, height: 31, fill, stroke: ink, 'stroke-width': 3 }));
     svg.append(svgEl('path', { d: 'M2 15 L60 46 M60 15 L2 46', stroke: ink, 'stroke-width': 2.5 }));
+    if (u.type === 'hmg') svg.append(svgEl('path', { d: 'M31 42 L31 19 M25 25 L31 19 L37 25', fill: 'none', stroke: ink, 'stroke-width': 2.5 }));
     return svg;
   }
 
@@ -312,7 +315,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     const who = el('div');
     const name = el('div', 'name', u.kind === 'leader' ? 'Squad leader' : u.team);
     const roles = el('div', 'roles');
-    const roster = u.kind === 'leader' ? s.balance.unit.leaderRoles : s.balance.unit.roles;
+    const roster = unitType(s.balance, u).roles;
     for (const r of roster) {
       const alive = u.soldiers.includes(r);
       const span = el('span', alive ? '' : 'lost');
@@ -321,7 +324,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     }
     if (u.exposed) roles.append(el('span', '', 'exposed'));
     who.append(name, roles);
-    const status = u.status === 'ok' ? (u.moved ? 'moved' : 'ready') : u.status;
+    const status = u.status !== 'ok' ? u.status : u.moved ? 'moved' : u.reload > 0 ? 'reloading' : 'ready';
     const tag = el('span', `tag ${u.status}`, status);
     const order = el('div', 'order', u.status === 'eliminated' ? '' : orderLine(u));
     if (order.textContent.includes('NOT POSSIBLE')) order.classList.add('bad');
@@ -379,7 +382,9 @@ export function startApp(initialState, { reveal = false } = {}) {
     const o = options();
     if (h && o.assault.some((m) => same(m, h))) return previewAction(projectedFor(u.id), { type: 'move', unit: u.id, to: h });
     const assault = o.assault.length ? ' Red ring: assault the enemy there (point at it for the odds).' : '';
-    return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${assault}${lead}${deselect}`;
+    const type = unitType(app.state.balance, u);
+    const moves = type.fastMove ? 'Click a green hex to move 1 hex, an orange hex to fast move 2.' : `Click a green hex to move 1 hex (the ${type.name} cannot fast move).`;
+    return `${u.team} selected. ${moves}${assault}${lead}${deselect}`;
   }
 
   const fireDiceText = (u) => { const n = fireDice(app.state.balance, u); return `${n} ${n === 1 ? 'die' : 'dice'}`; };
@@ -492,7 +497,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     }));
     // Teams first so the SL sits on top.
     counters.sort((a, b) => (a.unit.kind === 'leader') - (b.unit.kind === 'leader'));
-    drawCounters(ctx, app.cam, counters, s.balance.unit.roles);
+    drawCounters(ctx, app.cam, counters, (u) => unitType(s.balance, u).roles);
 
     for (const f of overlay) f();
     app.shots = app.shots.filter((x) => now < x.start + SHOT_MS);

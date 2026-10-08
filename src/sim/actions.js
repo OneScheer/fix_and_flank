@@ -21,7 +21,7 @@ import { inBounds, terrainName, terrainOf } from './map.js';
 import { eliminationResult, endGame } from './mission.js';
 import { advance } from './phases.js';
 import { updateContacts } from './spotting.js';
-import { canActivate, cloneState, currentPhase, isActive, isSuppressed, mayFire, unitsAt } from './state.js';
+import { canActivate, cloneState, currentPhase, isActive, isSuppressed, mayFire, unitType, unitsAt } from './state.js';
 
 export const ACTION_TYPES = ['move', 'fastMove', 'fire', 'pass'];
 const ACTION_NAMES = { move: 'moving', fastMove: 'fast moving', fire: 'firing' };
@@ -67,6 +67,7 @@ export function validateAction(state, action) {
     return sol.ok ? { ok: true } : { ok: false, reason: sol.reason };
   }
   if (isSuppressed(unit)) return { ok: false, reason: `${unit.team} is ${unit.status} and cannot move` };
+  if (action.type === 'fastMove' && !unitType(state.balance, unit).fastMove) return { ok: false, reason: `the ${unitType(state.balance, unit).name} cannot fast move` };
   const path = action.type === 'move' ? [action.to] : action.path;
   if (!Array.isArray(path) || path.length === 0) return { ok: false, reason: 'no destination' };
   if (action.type === 'move' && path.length !== 1) return { ok: false, reason: 'a move is one hex' };
@@ -101,8 +102,8 @@ export function moveOptions(state, unit) {
     for (const n of neighborsInBounds(state, from)) {
       if (path.some((p) => p.col === n.col && p.row === n.row) || (n.col === unit.pos.col && n.row === unit.pos.row)) continue;
       const next = [...path, n];
-      if (!ok(next, 'fastMove')) continue;
       if (path.length === 0 && ok(next, 'move')) moves.push(n);
+      if (!ok(next, 'fastMove')) continue;
       if (!fast.has(key(n))) fast.set(key(n), next);
       frontier.push(next);
     }
@@ -141,6 +142,8 @@ export function applyAction(state, action, rng) {
   if (!via && action.type === 'fire') {
     events.push(resolveFire(next, unit, fireSolution(next, unit, action.target), rng));
     unit.fired = true;
+    // Counted down at the start of each of its side's turns: fireEveryTurns 2 (the HMG) = every other turn.
+    unit.reload = unitType(next.balance, unit).fireEveryTurns;
   }
   unit.activated = true;
   updateContacts(next, events);

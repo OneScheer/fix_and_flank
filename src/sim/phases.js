@@ -11,7 +11,7 @@
 //
 // A phase in which nobody can act is skipped. The first phase of a side in a
 // turn starts that side's turn: its units' moved, fired and exposed flags
-// are cleared.
+// are cleared, and reloading weapons count down one turn.
 
 import { rollD6 } from './dice.js';
 import { endGame, turnEndResult } from './mission.js';
@@ -79,6 +79,7 @@ function enterPhase(state, rng, events) {
       u.moved = false;
       u.fired = false;
       u.exposed = false;
+      if (u.reload > 0) u.reload -= 1;
     }
   }
   const start = { type: 'phase_start', turn: state.turn, phase: state.phase, name: phase.name, side: phase.side, idle: false };

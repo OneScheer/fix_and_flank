@@ -11,6 +11,7 @@ import { updateContacts } from './spotting.js';
 //   units: [{
 //     id, side, team, pos: {col, row},
 //     kind: 'team' | 'leader',                a fireteam, or the squad leader (SL)
+//     type: null | 'hmg',                     a special team (balance.unitTypes), else a rifle fireteam
 //     soldiers: ['TL', 'AR', 'GRN', 'RFL'],   who is left (a leader: ['SL'])
 //     status: 'ok' | 'suppressed' | 'pinned' | 'eliminated',
 //                         suppressed: cannot move; pinned: cannot move or fire
@@ -18,6 +19,7 @@ import { updateContacts } from './spotting.js';
 //     moved,              moved or fast moved: cannot fire until its side's next turn
 //     exposed,            fast moved; until its side's next turn starts
 //     fired,              fired (gives it away until its side's next turn; set by fire, milestone 4)
+//     reload,             side's turns until it can fire again (a type with fireEveryTurns, the HMG)
 //   }],
 //   contacts: { [side]: { [enemyId]: { level: 'spotted' | 'suspected', pos, turn } } }
 //   result: null, or { winner, why } once the mission is over (see mission.js)
@@ -33,12 +35,14 @@ export function createState({ balance, map, seed }) {
     team: u.team,
     pos: { col: u.pos[0], row: u.pos[1] },
     kind: u.kind ?? 'team',
-    soldiers: [...(u.soldiers ?? (u.kind === 'leader' ? balance.unit.leaderRoles : balance.unit.roles))],
+    type: u.type ?? null,
+    soldiers: [...(u.soldiers ?? unitType(balance, { kind: u.kind ?? 'team', type: u.type ?? null }).roles)],
     status: 'ok',
     activated: false,
     moved: false,
     exposed: false,
     fired: false,
+    reload: 0,
   }));
   const state = {
     turn: 1,
@@ -54,6 +58,24 @@ export function createState({ balance, map, seed }) {
   };
   updateContacts(state, []);
   return state;
+}
+
+// What kind of unit this is, with defaults filled in from balance: { name,
+// roles, casualtyOrder, fastMove, assault, maxRangeHexes, range }.
+export function unitType(balance, unit) {
+  const base = unit.kind === 'leader'
+    ? { name: 'squad leader', roles: balance.unit.leaderRoles }
+    : { name: 'fireteam', roles: balance.unit.roles };
+  return {
+    casualtyOrder: balance.unit.casualtyOrder,
+    fastMove: true,
+    assault: unit.kind === 'team',
+    fireEveryTurns: 1,
+    maxRangeHexes: balance.fire.maxRangeHexes,
+    range: balance.fire.range,
+    ...base,
+    ...(unit.type ? balance.unitTypes[unit.type] : {}),
+  };
 }
 
 export function cloneState(state) {
@@ -100,6 +122,7 @@ export function mayFire(unit) {
   if (unit.status === 'eliminated') return { ok: false, reason: `${unit.team} is eliminated` };
   if (unit.status === 'pinned') return { ok: false, reason: `${unit.team} is pinned and cannot fire` };
   if (unit.moved) return { ok: false, reason: `${unit.team} moved this turn and cannot fire` };
+  if (unit.reload > 0) return { ok: false, reason: `${unit.team} is reloading and fires again next turn` };
   return { ok: true };
 }
 

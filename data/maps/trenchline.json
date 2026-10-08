@@ -5,7 +5,7 @@
     "attacker": "BLUFOR",
     "defender": "OPFOR",
     "turns": 12,
-    "brief": "Take and hold the trench at 6,3 within 12 turns. One OPFOR fireteam is dug in there, parapets facing south. Fix it from the wall, flank it up the sunken track on the east, assault from the side."
+    "brief": "Take and hold the trench at 6,3 within 12 turns. One OPFOR fireteam is dug in there, parapets facing south. Fix it from the wall with ALPHA and the HMG, flank it up the sunken track on the east with BRAVO, assault from the side."
   },
   "width": 14,
   "height": 16,
@@ -307,6 +307,15 @@
         10,
         13
       ]
+    },
+    {
+      "side": "BLUFOR",
+      "team": "HMG",
+      "type": "hmg",
+      "pos": [
+        4,
+        13
+      ]
     }
   ],
   "drills": {
@@ -328,10 +337,19 @@
           6,
           5
         ]
+      ],
+      "HMG": [
+        [
+          5,
+          4
+        ]
       ]
     },
     "fixAndFlank": {
-      "baseOfFire": "ALPHA",
+      "baseOfFire": [
+        "ALPHA",
+        "HMG"
+      ],
       "maneuver": "BRAVO",
       "leaderWith": "BRAVO",
       "closeIn": 4,
@@ -339,6 +357,12 @@
         "ALPHA": [
           [
             5,
+            10
+          ]
+        ],
+        "HMG": [
+          [
+            4,
             10
           ]
         ],

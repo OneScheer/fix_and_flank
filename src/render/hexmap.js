@@ -415,6 +415,22 @@ function infantryX(ctx, side, x0, y0, w, h, lw) {
   ctx.stroke();
 }
 
+// Machine gun (NATO): a vertical arrow through the frame.
+function machineGun(ctx, x0, y0, w, h, lw) {
+  const cx = x0 + w / 2;
+  const top = y0 + h * 0.12;
+  const head = h * 0.22;
+  ctx.strokeStyle = COLORS.ink;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  ctx.moveTo(cx, y0 + h * 0.9);
+  ctx.lineTo(cx, top);
+  ctx.moveTo(cx - head, top + head);
+  ctx.lineTo(cx, top);
+  ctx.lineTo(cx + head, top + head);
+  ctx.stroke();
+}
+
 // Echelon mark above the frame: fireteam = circle with a slash, squad (the SL) = one dot.
 function echelon(ctx, kind, x, y, size) {
   ctx.strokeStyle = COLORS.ink;
@@ -440,7 +456,7 @@ function echelon(ctx, kind, x, y, size) {
 // one pip per soldier below (filled: present, hollow: lost). Pinned teams are
 // hatched. The SL: a smaller counter with the squad dot, at the hex's lower
 // left when it shares the hex with a team.
-export function drawCounters(ctx, cam, units, roster) {
+export function drawCounters(ctx, cam, units, rosterOf) {
   for (const { unit, pos, selected, stackedWithTeam, ghost } of units) {
     if (unit.status === 'eliminated') continue;
     const leader = unit.kind === 'leader';
@@ -485,6 +501,7 @@ export function drawCounters(ctx, cam, units, roster) {
       ctx.restore();
     }
     infantryX(ctx, unit.side, x0, y0, w, h, lw);
+    if (unit.type === 'hmg') machineGun(ctx, x0, y0, w, h, lw);
     frame(ctx, unit.side, x0, y0, w, h);
     ctx.strokeStyle = COLORS.ink;
     ctx.lineWidth = lw;
@@ -511,6 +528,7 @@ export function drawCounters(ctx, cam, units, roster) {
       const r = Math.max(1.6, size * 0.045);
       const gap = r * 2.7;
       const py = (unit.side === 'OPFOR' ? y0 + h / 2 + h * 0.72 : y0 + h) + r * 2.2;
+      const roster = rosterOf(unit);
       const px0 = x0 + w / 2 - ((roster.length - 1) * gap) / 2;
       ctx.lineWidth = Math.max(1, r * 0.5);
       for (let i = 0; i < roster.length; i++) {
