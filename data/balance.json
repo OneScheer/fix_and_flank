@@ -49,7 +49,7 @@
     "pinHits": 2
   },
   "assault": {
-    "attackTn": { "ok": 5, "suppressed": 4, "pinned": 3 },
+    "attackTn": { "ok": 5, "suppressed": 3, "pinned": 3 },
     "attackerSuppressedMod": 1,
     "defendTn": 5,
     "dugInFrom": 5,
@@ -69,7 +69,7 @@
     "seedSalt": 2654435769
   },
   "rally": {
-    "worstOn": 6
+    "worstOn": 5
   },
   "vision": {
     "maxRangeHexes": 12,

@@ -13,8 +13,9 @@
 //                  by (suppressed, pinned, or fewer men): move toward it,
 //                  assault when next to it and the odds are fair.
 //   RETREAT        down to retreatAtSoldiers: move away from known enemies.
-//   ENGAGED        a spotted enemy within openFireRange: aimed fire at the
-//                  best target (expected casualties + pinWeight x pin chance).
+//   ENGAGED        a spotted enemy within openFireRange, or one that has
+//                  fired (return fire, any range): aimed fire at the best
+//                  target (expected casualties + pinWeight x pin chance).
 //   REPOSITION     poor cover against the nearest known enemy: move to a
 //                  next hex with goodCover that is not next to an enemy.
 //   HOLD           otherwise: stay put and hold fire (firing gives it away).
@@ -106,7 +107,7 @@ function decide(state, u, roll) {
   let shot = null;
   for (const c of spotted) {
     const range = distance(c.pos, u.pos);
-    if (range < 2 || range > ai.openFireRange) continue;
+    if (range < 2 || (range > ai.openFireRange && !c.unit.fired)) continue; // return fire at any range
     const action = { type: 'fire', unit: u.id, target: { ...c.pos } };
     if (!validateAction(state, action).ok) continue;
     const sol = fireSolution(state, u, c.pos);

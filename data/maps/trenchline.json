@@ -1,0 +1,382 @@
+{
+  "name": "Mission 1: Trench Line",
+  "description": "A dug-in OPFOR fireteam holds a short trench line at the edge of the woods, parapets facing south over an open field. A stone wall crosses the field 350 m out. On the east side a sunken farm track runs north behind a hedgerow; the west is open ground and a pond.",
+  "mission": {
+    "attacker": "BLUFOR",
+    "defender": "OPFOR",
+    "turns": 12,
+    "brief": "Take and hold the trench at 6,3 within 12 turns. One OPFOR fireteam is dug in there, parapets facing south. Fix it from the wall, flank it up the sunken track on the east, assault from the side."
+  },
+  "width": 14,
+  "height": 16,
+  "legend": {
+    ".": "open",
+    "=": "road",
+    ":": "scrub",
+    "T": "woods",
+    "%": "rubble",
+    "B": "building",
+    "n": "trench",
+    "~": "water"
+  },
+  "rows": [
+    "TTTT=TTTTTTTTT",
+    "TTTT=TTTTTTTTT",
+    "TTT.=......TTT",
+    "T...=.nn:....T",
+    "....=....:=.~.",
+    "~~:.=.....=.~.",
+    "~~~.=.....=:~.",
+    "~~:.=.....=:~.",
+    "....=.....=.~.",
+    "....=.....=.~.",
+    ".:..=.....=:~.",
+    "TT..=.....=:~.",
+    "TT:.=.....=.~.",
+    "T...=.BB..=.~.",
+    "....=.B.%.=.~.",
+    "....=.....=.~."
+  ],
+  "objective": [
+    6,
+    3
+  ],
+  "hexsides": [
+    {
+      "hex": [
+        6,
+        3
+      ],
+      "sides": [
+        "SW",
+        "SE"
+      ],
+      "feature": "parapet"
+    },
+    {
+      "hex": [
+        7,
+        3
+      ],
+      "sides": [
+        "SW",
+        "SE"
+      ],
+      "feature": "parapet"
+    },
+    {
+      "hex": [
+        2,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        3,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        4,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        5,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        6,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        7,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        8,
+        10
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    },
+    {
+      "hex": [
+        9,
+        4
+      ],
+      "sides": [
+        "W",
+        "NW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        5
+      ],
+      "sides": [
+        "W",
+        "SW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        6
+      ],
+      "sides": [
+        "W",
+        "NW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        7
+      ],
+      "sides": [
+        "W",
+        "SW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        8
+      ],
+      "sides": [
+        "W",
+        "NW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        9
+      ],
+      "sides": [
+        "W",
+        "SW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        10
+      ],
+      "sides": [
+        "W",
+        "NW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        11
+      ],
+      "sides": [
+        "W",
+        "SW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        12
+      ],
+      "sides": [
+        "W",
+        "NW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        13
+      ],
+      "sides": [
+        "W",
+        "SW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        9,
+        14
+      ],
+      "sides": [
+        "W",
+        "NW"
+      ],
+      "feature": "hedge"
+    },
+    {
+      "hex": [
+        6,
+        13
+      ],
+      "sides": [
+        "NW",
+        "NE"
+      ],
+      "feature": "wall"
+    }
+  ],
+  "units": [
+    {
+      "side": "BLUFOR",
+      "team": "ALPHA",
+      "pos": [
+        5,
+        13
+      ]
+    },
+    {
+      "side": "BLUFOR",
+      "team": "BRAVO",
+      "pos": [
+        10,
+        13
+      ]
+    },
+    {
+      "side": "OPFOR",
+      "team": "ALPHA",
+      "pos": [
+        6,
+        3
+      ]
+    },
+    {
+      "side": "BLUFOR",
+      "team": "SL",
+      "kind": "leader",
+      "pos": [
+        10,
+        13
+      ]
+    }
+  ],
+  "drills": {
+    "frontal": {
+      "ALPHA": [
+        [
+          6,
+          4
+        ]
+      ],
+      "BRAVO": [
+        [
+          7,
+          4
+        ]
+      ],
+      "SL": [
+        [
+          6,
+          5
+        ]
+      ]
+    },
+    "fixAndFlank": {
+      "baseOfFire": "ALPHA",
+      "maneuver": "BRAVO",
+      "leaderWith": "BRAVO",
+      "closeIn": 4,
+      "routes": {
+        "ALPHA": [
+          [
+            5,
+            10
+          ]
+        ],
+        "BRAVO": [
+          [
+            10,
+            11
+          ],
+          [
+            10,
+            9
+          ],
+          [
+            10,
+            7
+          ],
+          [
+            10,
+            5
+          ],
+          [
+            10,
+            4
+          ],
+          [
+            9,
+            4
+          ],
+          [
+            8,
+            3
+          ],
+          [
+            7,
+            3
+          ]
+        ]
+      }
+    }
+  }
+}

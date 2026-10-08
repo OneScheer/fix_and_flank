@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node scripts/serve.js",
-    "test": "node --test \"tests/**/*.test.js\""
+    "test": "node --test \"tests/**/*.test.js\"",
+    "balance": "node scripts/balance.js"
   },
   "engines": {
     "node": ">=22"
