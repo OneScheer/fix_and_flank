@@ -21,6 +21,7 @@
 import { rollD6 } from './dice.js';
 import { adjacent, distance, key, neighbors } from './hex.js';
 import { inBounds, terrainName, terrainOf } from './map.js';
+import { updateContacts } from './spotting.js';
 import {
   betterStatus, canActivate, cloneState, firstSideToAct, isSuppressed, sidesWithActivations, unitsAt,
 } from './state.js';
@@ -138,6 +139,7 @@ function advance(state, rng, events) {
     for (const u of state.units) {
       u.activated = false;
       u.moved = false;
+      u.fired = false;
     }
     state.activeSide = firstSideToAct(state);
     events.push({ type: 'turn_start', turn: state.turn, side: state.activeSide });
@@ -174,7 +176,9 @@ export function applyAction(state, action, rng) {
     events.push({ type: 'rally', unit: unit.id, target: target.id, roll, need, success, from, to: target.status });
   }
   unit.activated = true;
+  updateContacts(next, events);
   advance(next, rng, events);
+  updateContacts(next, events);
   next.rngState = rng.getState();
   return { state: next, events };
 }

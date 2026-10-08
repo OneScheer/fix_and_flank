@@ -35,6 +35,11 @@
     "rangeHexes": 1,
     "succeedOn": 3
   },
+  "vision": {
+    "maxRangeHexes": 12,
+    "spotWithinHexes": 1,
+    "suspectedTurns": 2
+  },
   "terrain": {
     "open": { "move": "normal", "casualtyOn": 4, "concealing": false, "blocksLos": false },
     "road": { "move": "normal", "casualtyOn": 4, "concealing": false, "blocksLos": false },
@@ -46,8 +51,8 @@
     "water": { "move": "impassable", "casualtyOn": 4, "concealing": false, "blocksLos": false }
   },
   "hexsides": {
-    "wall": { "casualtyOn": 6, "shared": true },
-    "hedge": { "casualtyOn": 5, "shared": true },
-    "parapet": { "casualtyOn": 6, "shared": false }
+    "wall": { "casualtyOn": 6, "shared": true, "blocksLos": false },
+    "hedge": { "casualtyOn": 5, "shared": true, "blocksLos": true },
+    "parapet": { "casualtyOn": 6, "shared": false, "blocksLos": false }
   }
 }

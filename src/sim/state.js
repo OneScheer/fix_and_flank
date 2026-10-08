@@ -1,4 +1,6 @@
 // Game state shape.
+
+import { updateContacts } from './spotting.js';
 //
 // state = {
 //   turn,                 1-based
@@ -14,7 +16,9 @@
 //     activated,          has acted this turn
 //     moved,              moved or fast moved this turn: cannot fire until next turn
 //     exposed,            fast moved; until its own next activation
+//     fired,              fired this turn (gives it away; set by fire, milestone 4)
 //   }],
+//   contacts: { [side]: { [enemyId]: { level: 'spotted' | 'suspected', pos, turn } } }
 // }
 //
 // Units are stored in id order. Everything except balance and map is plain
@@ -32,6 +36,7 @@ export function createState({ balance, map, seed }) {
     activated: false,
     moved: false,
     exposed: false,
+    fired: false,
   }));
   const state = {
     turn: 1,
@@ -41,13 +46,15 @@ export function createState({ balance, map, seed }) {
     balance,
     map,
     units,
+    contacts: Object.fromEntries((balance.turn.initiative).map((side) => [side, {}])),
   };
   state.activeSide = firstSideToAct(state);
+  updateContacts(state, []);
   return state;
 }
 
 export function cloneState(state) {
-  return { ...state, units: structuredClone(state.units) };
+  return { ...state, units: structuredClone(state.units), contacts: structuredClone(state.contacts) };
 }
 
 export function isActive(unit) {
