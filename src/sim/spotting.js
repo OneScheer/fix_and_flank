@@ -6,8 +6,11 @@
 //
 // An enemy is spotted when any unit of the side has line of sight to it and
 // it is in terrain that does not conceal, or within vision.spotWithinHexes,
-// or exposed (fast moved), or it fired this turn. A spotted enemy that stops
-// being spotted becomes suspected at its last known hex. A suspected contact
+// or exposed (fast moved), or it fired this turn. Once spotted, an enemy
+// stays spotted while it stays in that hex and a unit of the side still has
+// line of sight to it (a known position: a dug-in team that gave itself away
+// by firing stays marked). A spotted enemy that stops being spotted (it moved
+// on while concealed, or sight was lost) becomes suspected at its last known hex. A suspected contact
 // is dropped after vision.suspectedTurns turns, or when a unit of the side is
 // within vision.spotWithinHexes of that hex (close enough to spot anyone
 // there) and the enemy is not there.
@@ -27,6 +30,9 @@ export function spotReason(state, side, enemy) {
   const { map, balance } = state;
   if (enemy.status === 'eliminated') return null;
   const concealed = terrainOf(map, balance, enemy.pos).concealing;
+  const current = state.contacts?.[side]?.[enemy.id];
+  const stayedPut = current?.level === 'spotted' && same(current.pos, enemy.pos);
+  let kept = null;
   for (const o of observers(state, side)) {
     const los = lineOfSight(map, balance, o.pos, enemy.pos);
     if (!los.clear) continue;
@@ -34,8 +40,9 @@ export function spotReason(state, side, enemy) {
     if (distance(o.pos, enemy.pos) <= balance.vision.spotWithinHexes) return { by: o.id, why: 'close by' };
     if (enemy.exposed) return { by: o.id, why: 'moving fast' };
     if (enemy.fired) return { by: o.id, why: 'firing' };
+    if (stayedPut) kept ??= { by: o.id, why: 'known position' };
   }
-  return null;
+  return kept;
 }
 
 // Is a unit of `side` close enough to hex h to spot anyone there?

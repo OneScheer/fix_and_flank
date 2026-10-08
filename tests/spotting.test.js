@@ -119,3 +119,49 @@ test('contacts replay identically', () => {
   };
   assert.deepEqual(play(), play());
 });
+
+// OPFOR dug in at 3,0 (trench) with woods at 4,0; BLUFOR in the open at 3,5.
+const DUG = ['...nT...', '........', '........', '........', '........', '........'];
+
+function revealed() {
+  let s = makeState(DUG, [unit('BLUFOR', 'ALPHA', 3, 5), unit('OPFOR', 'ALPHA', 3, 0)]);
+  assert.equal(contact(s, 'BLUFOR', 1), null, 'dug in and quiet: unseen');
+  s = toPhase(s, 'enemy action');
+  s = act(s, { type: 'fire', unit: 1, target: H(3, 4) }).state; // gives itself away
+  assert.equal(contact(s, 'BLUFOR', 1).level, 'spotted');
+  return s;
+}
+
+test('a spotted unit that stays put stays spotted while it is in sight, after the firing is over', () => {
+  let s = revealed();
+  s = toPhase(s, 'enemy action'); // OPFOR's next turn: its fired flag is cleared
+  assert.equal(s.units[1].fired, false);
+  assert.equal(contact(s, 'BLUFOR', 1).level, 'spotted');
+  const r = commit(s, []);
+  assert.equal(contact(r.state, 'BLUFOR', 1).level, 'spotted', 'and on through the turns');
+  assert.ok(!r.events.some((e) => e.type === 'lost'));
+});
+
+test('...it is lost when it moves on in concealment', () => {
+  let s = toPhase(revealed(), 'enemy action');
+  const r = act(s, { type: 'move', unit: 1, to: H(4, 0) }); // into the woods next door
+  assert.equal(contact(r.state, 'BLUFOR', 1).level, 'suspected');
+  assert.deepEqual(contact(r.state, 'BLUFOR', 1).pos, H(3, 0), 'last seen in the trench');
+});
+
+test('...and when nobody can see it any more', () => {
+  const s = revealed();
+  const r = act(s, { type: 'move', unit: 0, to: H(4, 4) }); // only units with line of sight keep it
+  assert.equal(contact(r.state, 'BLUFOR', 1).level, 'spotted', 'still in sight from 4,4');
+  const blocked = revealedBehind();
+  assert.equal(contact(blocked, 'BLUFOR', 1).level, 'suspected');
+});
+
+// Same, but BLUFOR then steps behind a woods hex that cuts the line.
+function revealedBehind() {
+  let s = makeState(['...n....', '........', '........', '..T.....', '........', '........'], [unit('BLUFOR', 'ALPHA', 3, 4), unit('OPFOR', 'ALPHA', 3, 0)]);
+  s = toPhase(s, 'enemy action');
+  s = act(s, { type: 'fire', unit: 1, target: H(3, 3) }).state;
+  assert.equal(contact(s, 'BLUFOR', 1).level, 'spotted');
+  return act(s, { type: 'move', unit: 0, to: H(2, 4) }).state;
+}

@@ -171,3 +171,9 @@ Answers to the follow-up questions:
 - **"Sometimes" is deterministic:** the AI uses its own RNG seeded from `state.rngState` xor `ai.seedSalt`, drawing one number per unit whether used or not, so the AI never consumes the game's dice and replays are exact.
 - **Difficulty** (milestone 9) will change these numbers (aggression, open-fire range) and dice modifiers, not what the AI can see.
 - **Smoke test:** 50 games of the training map against a naive BLUFOR that walks straight up the middle and fires at whatever it sees: OPFOR's team survives 47 of them. Not the milestone 7 balance test, but the right direction.
+
+## Known positions (user request)
+
+- **Problem:** a dug-in team that fired was spotted only until its own side's next turn (the `fired` flag), then dropped back to a suspected "?" although it had not moved and the trench was in plain view.
+- **Rule now:** a spotted unit stays spotted (reason "known position") while it stays in the same hex and at least one enemy unit has line of sight to it. Before it is first spotted (by firing, being adjacent, moving fast or being in the open), a unit in concealment stays unseen. It becomes suspected at its last known hex when it moves on in concealment or when no enemy unit can see that hex any more.
+- Applies to both sides and to every way of being spotted, so a BLUFOR team that gave itself away stays marked for the AI in the same way.

@@ -138,6 +138,7 @@ Close combat when a fireteam moves (a 1-hex Move, in the movement phase) or fire
 - Line of sight runs from hex center to hex center; woods and buildings in between block it. The target's own hex never blocks.
 - Enemy contacts have three levels: **unseen**, **suspected** (last known position, or a hex that fired), **spotted** (confirmed, shown on the map).
 - A unit in line of sight is spotted if it is in the open, adjacent, exposed, or has fired this turn. Firing reveals the shooter, which is how a dug-in enemy gets found.
+- Once spotted, a unit stays spotted while it stays in that hex and an enemy unit still has line of sight to it (a known position). It drops to suspected when it moves on while concealed, or when nobody can see the hex any more.
 
 ### Odds preview (important)
 

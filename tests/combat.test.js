@@ -229,7 +229,7 @@ test('fire at an empty hex rolls the dice and hits nobody', () => {
   assert.deepEqual(e.casualtyRolls, []);
 });
 
-test('firing gives the shooter away until its side\'s next turn', () => {
+test('firing gives the shooter away; it stays spotted while it stays put', () => {
   // OPFOR in the trench, unseen, fires in its phase: BLUFOR spots it and still
   // sees it through its own movement and firefight phases.
   let s = makeState(ROWS, [unit('BLUFOR', 'ALPHA', 3, 5), unit('OPFOR', 'ALPHA', 3, 2)], 1, PARAPETS);
@@ -244,7 +244,9 @@ test('firing gives the shooter away until its side\'s next turn', () => {
   assert.equal(ff.contacts.BLUFOR[1]?.level, 'spotted', 'still seen in the firefight phase');
   assert.equal(validateAction(ff, fire(0, 3, 2)).ok, true, 'and can be engaged with aimed fire');
   const later = commitOrders(ff, [], createRng(ff.rngState)).state;
-  assert.equal(later.contacts.BLUFOR[1]?.level, 'suspected', 'once OPFOR\'s turn starts, it is hidden again');
+  assert.equal(later.balance.turn.phases[later.phase].name, 'enemy action');
+  assert.equal(later.units[1].fired, false, 'its own turn has started');
+  assert.equal(later.contacts.BLUFOR[1]?.level, 'spotted', 'but it stays marked in its trench: a known position');
 });
 
 test('fire replays identically', () => {
