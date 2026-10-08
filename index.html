@@ -58,14 +58,6 @@
         <div id="units"></div>
       </section>
       <section>
-        <h2>Order</h2>
-        <div class="row">
-          <button id="mode-move" title="M">Move</button>
-          <button id="mode-fast" title="R">Fast move</button>
-          <button id="mode-rally" title="L">Rally (SL)</button>
-        </div>
-      </section>
-      <section>
         <div id="preview"></div>
         <div id="message"></div>
       </section>
@@ -80,11 +72,11 @@
         <pre id="log"></pre>
       </section>
       <section class="keys">
-        Click a unit to select it (click again to switch between a team and the SL in the same hex), then click a hex to give its order.
+        Left click a unit to select it, then left click a hex: green moves 1 hex, orange fast moves 2 (exposed), blue (SL only) rallies a suppressed or pinned team.
+        Right click or Esc deselects. Clicking a hex with a team and the SL again switches between them.
         A new order replaces the old one. Orders run in the order given. Units without an order hold.
-        M move, R fast move, L rally, H hold, Tab next unit, Space commit. V shades what the selected unit cannot see. Home fits the map.
+        H hold (remove the selected unit's order), Tab next unit, Space commit. V shades what the selected unit cannot see. Drag to pan, wheel to zoom, Home fits the map.
         OPFOR is only shown once spotted (in the open, adjacent, moving fast, or firing); ? marks a suspected position.
-        Fire and assault come in the next milestones.
       </section>
     </aside>
   </main>

@@ -33,7 +33,6 @@ export function startApp(initialState, { reveal = false } = {}) {
     state: initialState,
     cam: createCamera(),
     selected: null,
-    mode: 'move',
     plan: [],          // BLUFOR's orders for this turn, in the order they will run
     log: [],
     anim: [],
@@ -61,26 +60,16 @@ export function startApp(initialState, { reveal = false } = {}) {
     return projectOrders(app.state, i === -1 ? app.plan : app.plan.slice(0, i));
   }
 
-  function selectFirst() {
-    const ready = myUnits();
-    if (!ready.some((u) => u.id === app.selected)) app.selected = ready[0]?.id ?? null;
-    if (app.selected !== null && unit(app.selected).kind !== 'leader' && app.mode === 'rally') app.mode = 'move';
-  }
-
-  function setMode(mode) {
-    if (mode === 'rally' && (app.selected === null || unit(app.selected).kind !== 'leader')) {
-      app.message = 'Only the SL can rally. Select the SL first.';
-    } else {
-      app.mode = mode;
-      app.message = '';
-    }
-    render();
-  }
-
+  // Selection: left click a unit to select it, right click (or Esc) to deselect.
   function select(id) {
     app.selected = id;
     app.message = '';
-    if (unit(id).kind !== 'leader' && app.mode === 'rally') app.mode = 'move';
+    render();
+  }
+
+  function deselect() {
+    app.selected = null;
+    app.message = '';
     render();
   }
 
@@ -99,23 +88,22 @@ export function startApp(initialState, { reveal = false } = {}) {
     if (i === -1) app.plan.push(action);
     else app.plan[i] = action;
     app.message = '';
-    // Hand the next unit without an order to the player.
-    const next = myUnits().find((u) => orderIndex(u.id) === -1);
-    if (next) app.selected = next.id;
+    app.selected = null; // order given: the next click picks the next unit
     render();
   }
 
-  function orderAt(h) {
+  // The order a click on hex h gives the selected unit, or null. The distance
+  // decides: a next hex is a move, a hex two away a fast move; with the SL, a
+  // suppressed or pinned team next to him is a rally.
+  function orderFor(h) {
+    if (app.selected === null) return null;
     const id = app.selected;
     const o = options();
-    if (app.mode === 'move' && o.moves.some((m) => same(m, h))) return setOrder({ type: 'move', unit: id, to: h });
-    if (app.mode === 'fast' && o.fast.has(key(h))) return setOrder({ type: 'fastMove', unit: id, path: o.fast.get(key(h)) });
-    if (app.mode === 'rally') {
-      const t = o.rally.find((x) => same(x.pos, h));
-      if (t) return setOrder({ type: 'rally', unit: id, target: t.id });
-    }
-    app.message = app.mode === 'rally' ? 'Click a suppressed or pinned team next to the SL.' : 'Not a hex this unit can reach with that order.';
-    render();
+    const t = o.rally.find((x) => same(x.pos, h));
+    if (t) return { type: 'rally', unit: id, target: t.id };
+    if (o.moves.some((m) => same(m, h))) return { type: 'move', unit: id, to: h };
+    if (o.fast.has(key(h))) return { type: 'fastMove', unit: id, path: o.fast.get(key(h)) };
+    return null;
   }
 
   function holdSelected() {
@@ -176,7 +164,7 @@ export function startApp(initialState, { reveal = false } = {}) {
 
   function enemyTurn(delay) {
     if (app.state.activeSide === PLAYER_SIDE || app.state.activeSide === null) {
-      selectFirst();
+      app.selected = null;
       render();
       return;
     }
@@ -238,11 +226,6 @@ export function startApp(initialState, { reveal = false } = {}) {
     }));
 
     const sel = app.selected !== null ? unit(app.selected) : null;
-    for (const m of ['move', 'fast', 'rally']) {
-      const b = $(`mode-${m}`);
-      b.classList.toggle('selected', app.mode === m);
-      b.disabled = !planning() || !sel || (m === 'rally' && sel.kind !== 'leader');
-    }
     $('hold').disabled = !planning() || !sel || orderIndex(sel.id) === -1;
     $('clear').disabled = !planning() || !app.plan.length;
     $('commit').disabled = !planning();
@@ -250,7 +233,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     const contacts = knownEnemies(s, PLAYER_SIDE);
     const sp = contacts.filter((c) => c.level === 'spotted').length;
     $('turn').textContent = `Turn ${s.turn}. ${contacts.length ? `Contacts: ${sp} spotted, ${contacts.length - sp} suspected.` : 'No contact.'}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
-    $('preview').textContent = sel ? hint(sel) : '';
+    $('preview').textContent = hint(sel);
     $('message').textContent = app.message;
     const log = $('log');
     log.textContent = app.log.join('\n') || 'No orders carried out yet.';
@@ -259,13 +242,15 @@ export function startApp(initialState, { reveal = false } = {}) {
 
   function hint(u) {
     if (!planning()) return '';
+    if (!u) return 'Left click one of your units to select it.';
     const p = projectedFor(u.id).units[u.id];
-    if (p.status !== 'ok') return `${u.team} is ${p.status}: cannot move.${u.kind === 'leader' && p.status !== 'pinned' ? ' Can still rally.' : ''} It holds unless rallied.`;
-    return {
-      move: `${u.team}: click a green hex to move 1 hex.`,
-      fast: `${u.team}: click an orange hex to fast move up to 2 hexes.`,
-      rally: `${u.team}: click a blue hex to rally that team.`,
-    }[app.mode];
+    const deselect = ' Right click to deselect.';
+    if (p.status !== 'ok') {
+      const rally = u.kind === 'leader' && p.status !== 'pinned' ? ' Click a blue hex to rally a team.' : '';
+      return `${u.team} selected: ${p.status}, cannot move.${rally}${deselect}`;
+    }
+    const rally = u.kind === 'leader' ? ' Blue: rally a suppressed or pinned team.' : '';
+    return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${rally}${deselect}`;
   }
 
   function renderHover() {
@@ -315,9 +300,12 @@ export function startApp(initialState, { reveal = false } = {}) {
 
     const marks = [];
     const o = options();
-    if (app.mode === 'move') for (const h of o.moves) marks.push({ hex: h, color: COLORS.move });
-    if (app.mode === 'fast') for (const path of o.fast.values()) marks.push({ hex: path[path.length - 1], color: COLORS.fast });
-    if (app.mode === 'rally') for (const t of o.rally) marks.push({ hex: t.pos, color: COLORS.rally, width: 3 });
+    for (const h of o.moves) marks.push({ hex: h, color: COLORS.move });
+    for (const path of o.fast.values()) {
+      const end = path[path.length - 1];
+      if (!o.moves.some((m) => same(m, end))) marks.push({ hex: end, color: COLORS.fast });
+    }
+    for (const t of o.rally) marks.push({ hex: t.pos, color: COLORS.rally, width: 3 });
     if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
     if (app.view && app.selected !== null) {
       const from = projectedFor(app.selected).units[app.selected].pos;
@@ -384,27 +372,32 @@ export function startApp(initialState, { reveal = false } = {}) {
   canvas.addEventListener('pointerup', (e) => {
     const d = drag;
     drag = null;
-    if (!d || d.moved || d.button !== 0 || !planning()) return;
+    if (!d || d.moved || !planning()) return;
+    if (d.button === 2) {
+      deselect();
+      return;
+    }
+    if (d.button !== 0) return;
     const r = canvas.getBoundingClientRect();
     const h = hexAt(toWorld(app.cam, e.clientX - r.left, e.clientY - r.top));
     if (!inBounds(app.state.map, h)) return;
-    const o = options();
-    // A hex the selected unit can be ordered to comes first...
-    const orderable = (app.mode === 'move' && o.moves.some((m) => same(m, h)))
-      || (app.mode === 'fast' && o.fast.has(key(h)))
-      || (app.mode === 'rally' && o.rally.some((t) => same(t.pos, h)));
-    if (app.selected !== null && orderable) {
-      orderAt(h);
+    // With a unit selected, a hex it can be ordered to gives the order...
+    const order = orderFor(h);
+    if (order) {
+      setOrder(order);
       return;
     }
-    // ...otherwise a click on own units selects (again: switch team / SL in a hex).
+    // ...otherwise a click on own units selects (again on a shared hex: switch team / SL).
     const mine = unitsAt(app.state, h).filter((u) => u.side === PLAYER_SIDE && canActivate(app.state, u));
     if (mine.length) {
       const i = mine.findIndex((u) => u.id === app.selected);
       select(mine[(i + 1) % mine.length].id);
       return;
     }
-    if (app.selected !== null) orderAt(h);
+    if (app.selected !== null) {
+      app.message = 'That hex is out of reach. Green: move, orange: fast move. Right click to deselect.';
+      render();
+    }
   });
   canvas.addEventListener('pointerleave', () => {
     app.hover = null;
@@ -426,24 +419,18 @@ export function startApp(initialState, { reveal = false } = {}) {
     } else if (k === 'tab') {
       e.preventDefault();
       nextUnit();
-    } else if (k === 'm') setMode('move');
-    else if (k === 'r') setMode('fast');
-    else if (k === 'l') setMode('rally');
+    } else if (k === 'escape') deselect();
     else if (k === 'h' || k === 'backspace' || k === 'delete') holdSelected();
     else if (k === 'v') toggleView();
     else if (k === 'home' || k === '0') fit();
   });
 
-  $('mode-move').onclick = () => setMode('move');
-  $('mode-fast').onclick = () => setMode('fast');
-  $('mode-rally').onclick = () => setMode('rally');
   $('hold').onclick = holdSelected;
   $('clear').onclick = clearAll;
   $('commit').onclick = commit;
   $('view').onclick = toggleView;
 
   app.log.push(`Turn 1. ${app.state.activeSide} has the initiative.`);
-  selectFirst();
   render();
   renderHover();
   enemyTurn(0);
