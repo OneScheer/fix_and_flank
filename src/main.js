@@ -4,7 +4,7 @@ import { parseMap } from './sim/map.js';
 import { createState } from './sim/state.js';
 import { startApp } from './ui/app.js';
 
-const DEFAULT_MAP = 'training';
+const DEFAULT_MAP = 'trenchline';
 const DEFAULT_SEED = 1;
 
 async function loadJson(path) {

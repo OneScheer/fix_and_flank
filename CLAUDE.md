@@ -42,13 +42,14 @@ The simulation must be completely separate from rendering and UI.
     state.js        game state shape
     actions.js      action validation and resolution (the step function)
     orders.js       a side's orders: commit, and planning projections
+    mission.js      mission end: objective held, fireteams eliminated, turn limit
     phases.js       the turn sequence: movement, firefight, rally, enemy action
     los.js          line of sight and concealment on hexes
     spotting.js     fog of war and contact tracking
     combat.js       dice, target numbers, suppression, casualties, assault
     odds.js         exact odds for the preview
     rng.js          seeded RNG (mulberry32)
-  /ai         enemy behavior, reads state and returns actions
+  /ai         enemy behavior (basic.js), scripted BLUFOR plans (drills.js)
   /render     canvas drawing only
   /ui         input, action planning, odds preview, AAR replay
 /data
@@ -97,7 +98,7 @@ Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), 
 
 1. **Movement** (BLUFOR): Move or Fast move, or hold. A unit that moves is spent: it cannot fire this turn.
 2. **Firefight** (BLUFOR): units that did not move and are not pinned may Fire, or hold.
-3. **Rally** (BLUFOR, automatic): every suppressed or pinned unit tries to improve one step. With the SL in its hex it succeeds without a roll. Otherwise it rolls a d6 and must beat its distance in hexes to the SL (needs distance + 1, never worse than 6+; 6+ with no SL). A unit next to an enemy cannot rally unless the SL is with it.
+3. **Rally** (BLUFOR, automatic): every suppressed or pinned unit tries to improve one step. With the SL in its hex it succeeds without a roll. Otherwise it rolls a d6 and must beat its distance in hexes to the SL (needs distance + 1, never worse than 5+; 5+ with no SL). A unit next to an enemy cannot rally unless the SL is with it.
 4. **Enemy action** (OPFOR): each suppressed or pinned enemy unit recovers one step and does nothing else; the others Move, Fast move or Fire.
 
 - In a phase that needs orders, the side gives an order to every unit that can act and commits them; the orders are carried out one after another in the order they were given, each rolling its own dice. A unit without an order holds. An order that has become impossible by the time it runs is skipped with the reason, and that unit holds.
@@ -128,10 +129,10 @@ Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), 
 Close combat when a fireteam moves (a 1-hex Move, in the movement phase) or fires (in the firefight) into the next hex with an enemy in it. Only fireteams assault; a suppressed team cannot move in but can assault by fire; a pinned team cannot assault.
 
 - Both sides roll one die per soldier at the same time; each success removes an enemy soldier.
-- Attacker's TN by the defender's state: 5+ ok, 4+ suppressed, 3+ pinned; +1 if the attacker is suppressed.
+- Attacker's TN by the defender's state: 5+ ok, 3+ suppressed or pinned; +1 if the attacker is suppressed.
 - Defender's TN: 5+, 4+ if dug in (its cover against the attacker's hex is 5+ or better), +1 if suppressed. A pinned defender cannot shoot back.
 - If the defender is wiped out or ends with fewer soldiers than the attacker, it is eliminated (with any other enemy unit in the hex: overrun) and the attacker takes the hex. Otherwise the attacker falls back pinned. A tie holds the hex.
-- With the defaults, a full team assaulting an unsuppressed full team in a trench takes it 20% of the time and loses 2 men on average; against a suppressed team 56%; against a pinned team 99%. Fix first, then assault.
+- With the defaults, a full team assaulting an unsuppressed full team in a trench takes it 20% of the time and loses 2 men on average; against a suppressed team 74%; against a pinned team 99%. Fix first, then assault.
 
 ### Vision and fog of war
 
@@ -149,6 +150,10 @@ Before committing, the UI tells the player what will happen, for example:
 - "Rally phase: ALPHA needs 3+ on a d6 to become suppressed, 4 in 6 (67%; SL 2 hexes away)."
 - "ALPHA assaults OPFOR ALPHA at 4,2 (trench, pinned): ALPHA 4 dice, hit on 3+ (defender pinned); OPFOR ALPHA is pinned and cannot shoot back. 99% to take the hex; otherwise ALPHA falls back pinned. Expected losses: ALPHA 0.00, OPFOR ALPHA 2.67."
 - "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next turn."
+
+### Missions
+
+A map may carry a `mission` (attacker, defender, turn limit, brief), an `objective` hex and `drills` (scripted plans for the balance test). The attacker wins by holding the objective with a fireteam at the end of a turn, or by eliminating every defending fireteam; the defender wins by eliminating every attacking fireteam, or when the last turn ends. Mission 1 is `data/maps/trenchline.json` (the default); `?map=training` loads the sandbox map, which never ends.
 
 ### After-action replay
 
@@ -197,7 +202,7 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 - Prefer small commits, one concern each, with a clear message.
 - When a rule is ambiguous, pick the simplest option, write it down in `docs/decisions.md`, and continue. Do not silently invent complex systems.
 - Do not add dependencies, frameworks, or a build step without asking.
-- When balance feels off, change `balance.json`, not code, and re-run the milestone 7 balance test.
+- When balance feels off, change `balance.json`, not code, and re-run the milestone 7 balance test (`npm test`; `npm run balance` prints the win rates and how the games ended).
 - Keep UI text plain and in the vocabulary of infantry tactics (fireteam, base of fire, contact, bounding, suppress, flank, assault). No filler, no flowery language.
 - After each milestone, summarize what works, what is stubbed, and what you would test next.
 

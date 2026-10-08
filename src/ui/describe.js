@@ -164,6 +164,8 @@ export function eventText(state, e, viewer = null) {
       return `${unitName(u)} recovers instead of acting: now ${e.to}.`;
     case 'turn_end':
       return `End of turn ${e.turn}.`;
+    case 'game_over':
+      return `MISSION OVER: ${e.winner} wins. ${e.why.charAt(0).toUpperCase()}${e.why.slice(1)}.`;
     case 'turn_start':
       return `Turn ${e.turn}.`;
     case 'phase_start':

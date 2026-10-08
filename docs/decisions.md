@@ -177,3 +177,24 @@ Answers to the follow-up questions:
 - **Problem:** a dug-in team that fired was spotted only until its own side's next turn (the `fired` flag), then dropped back to a suspected "?" although it had not moved and the trench was in plain view.
 - **Rule now:** a spotted unit stays spotted (reason "known position") while it stays in the same hex and at least one enemy unit has line of sight to it. Before it is first spotted (by firing, being adjacent, moving fast or being in the open), a unit in concealment stays unseen. It becomes suspected at its last known hex when it moves on in concealment or when no enemy unit can see that hex any more.
 - Applies to both sides and to every way of being spotted, so a BLUFOR team that gave itself away stays marked for the AI in the same way.
+
+## Hex milestone 7: first mission and balance
+
+- **Mission end** (`mission.js`, map `mission` block): attacker wins by holding the `objective` with a fireteam at the end of a turn, or when every defending fireteam is eliminated; defender wins when every attacking fireteam is eliminated (an SL alone cannot fight on) or when the last turn (`turns`, 12) ends. Elimination ends the game at once; the objective and turn limit are checked at turn end. `state.result = { winner, why }`; nobody can act afterwards. Maps without a mission never end.
+- **Mission 1: Trench Line** (`data/maps/trenchline.json`, 14 x 16 hexes, 700 x 800 m), built instead of reusing the training map at the user's request ("more balanced and realistic"). The training map's trench saw almost the whole field and its only flank route crossed open ground. The new map:
+  - one OPFOR fireteam in a two-hex trench at the edge of the woods, parapets facing south (the objective is the west hex, 6,3);
+  - an open field in front: the killing ground;
+  - a stone wall across the field 7 hexes (350 m) out: the base of fire line, outside the AI's open-fire range so the base of fire can open up first; from there fire on the trench needs 6+ (the parapet), the same as from closer in;
+  - on the east, a sunken farm track (column 10) behind a hedgerow (west sides of column 9, rows 4-14), hidden from the trench up to row 4, then scrub at 9,4 and 8,3 to the trench's empty east hex 7,3: the covered approach and the assault position on the unprotected flank;
+  - on the west, a pond and open ground: going round that way is long and exposed;
+  - woods behind the position, a farm at the start line, a stream on the far east.
+  Map generator kept out of the repo; the JSON is the source.
+- **Scripted plans** (`src/ai/drills.js`, hexes from the map's `drills`): they play by the player's rules (orders per phase, committed together, BLUFOR's knowledge only).
+  - *Frontal:* everyone fast moves straight at the trench and assaults when next to it; nobody stops to fire.
+  - *Fix and flank:* ALPHA moves to the wall and fires on the trench every firefight (suppressive fire until it is seen). BRAVO goes up the sunken track without firing, fast while far, careful moves within 4 hexes, the SL with it (he moves to BRAVO's hex, never ahead). From the assault position BRAVO assaults in the firefight, after ALPHA has fired, when the enemy is suppressed or pinned, or on the last turn anyway.
+- **AI change:** ENGAGED now returns fire at any range on a spotted enemy that has fired (CLAUDE.md: "taking fire, return fire on known contacts"); before, it held fire beyond `openFireRange` even while being shot at.
+- **Balance changes** (in `balance.json`, from a sweep; 200 seeds each):
+  - `rally.worstOn` 6 → 5: a team far from the SL (the base of fire) rallies on 5+, as the old turn-start recovery did. A base of fire pinned for half the game was the main reason fix-and-flank ran out of time.
+  - `assault.attackTn.suppressed` 4 → 3: the finish after a successful fix is reliable. A pinned defender is still better to assault (it cannot shoot back).
+  - Rejected: `movement.fastMoveHexes` 3 (frontal jumped to 24%, the flank did not gain).
+- **Result:** over seeds 1-200, frontal 0.0%, fix and flank 74.5% (average win on turn 10). Over seeds 201-1000 in blocks of 200: frontal 0-1%, fix and flank 74.5-83%. Assault odds on mission 1 now: unsuppressed dug-in defender 20%, suppressed 74%, pinned 99%.

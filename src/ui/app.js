@@ -55,7 +55,7 @@ export function startApp(initialState, { reveal = false } = {}) {
   fit();
 
   const unit = (id) => app.state.units[id];
-  const planning = () => app.state.activeSide === PLAYER_SIDE && !app.aiPending && !app.anim.length;
+  const planning = () => !app.state.result && app.state.activeSide === PLAYER_SIDE && !app.aiPending && !app.anim.length;
   const myUnits = () => app.state.units.filter((u) => u.side === PLAYER_SIDE && canActivate(app.state, u));
   const orderIndex = (id) => app.plan.findIndex((a) => a.unit === id);
   const spotted = (u) => app.state.contacts[PLAYER_SIDE]?.[u.id]?.level === 'spotted';
@@ -155,7 +155,7 @@ export function startApp(initialState, { reveal = false } = {}) {
       const line = passText(before, e, PLAYER_SIDE) ?? eventText(r.state, e, PLAYER_SIDE);
       if (!line) continue;
       if (e.type === 'turn_start') app.log.push('');
-      const heading = e.type === 'turn_end' || e.type === 'turn_start' || e.type === 'phase_start';
+      const heading = ['turn_end', 'turn_start', 'phase_start', 'game_over'].includes(e.type);
       app.log.push(heading ? line : `T${turn}  ${line}`);
     }
     if (app.log.length > MAX_LOG) app.log.splice(0, app.log.length - MAX_LOG);
@@ -238,6 +238,9 @@ export function startApp(initialState, { reveal = false } = {}) {
 
   function activeText() {
     const s = app.state;
+    if (s.result) {
+      return `Mission over: ${s.result.winner === PLAYER_SIDE ? 'you win' : 'you lose'}. ${s.result.why.charAt(0).toUpperCase()}${s.result.why.slice(1)}. Reload the page to play again (add ?seed=2 for other dice).`;
+    }
     if (!planning()) return app.aiPending || s.activeSide !== PLAYER_SIDE ? 'Enemy action: OPFOR is acting.' : 'Carrying out orders.';
     const total = myUnits().length;
     if (firefight()) {
@@ -291,7 +294,8 @@ export function startApp(initialState, { reveal = false } = {}) {
     $('view').classList.toggle('selected', app.view);
     const contacts = knownEnemies(s, PLAYER_SIDE);
     const sp = contacts.filter((c) => c.level === 'spotted').length;
-    $('turn').textContent = `Turn ${s.turn}. ${contacts.length ? `Contacts: ${sp} spotted, ${contacts.length - sp} suspected.` : 'No contact.'}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
+    const m = s.map.mission;
+    $('turn').textContent = `${m ? `${s.map.name}. ` : ''}Turn ${s.turn}${m ? ` of ${m.turns}` : ''}. ${contacts.length ? `Contacts: ${sp} spotted, ${contacts.length - sp} suspected.` : 'No contact.'}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
     $('preview').textContent = hint(sel);
     $('message').textContent = app.message;
     const log = $('log');
@@ -515,6 +519,8 @@ export function startApp(initialState, { reveal = false } = {}) {
   $('commit').onclick = commit;
   $('view').onclick = toggleView;
 
+  const brief = app.state.map.mission?.brief;
+  if (brief) app.log.push(`${app.state.map.name}. ${brief}`, '');
   app.log.push('Turn 1.', `${phaseLabel(currentPhase(app.state).name)} phase (${app.state.activeSide}).`);
   render();
   renderHover();
