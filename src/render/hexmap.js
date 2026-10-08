@@ -1,7 +1,7 @@
 // Canvas drawing of the hex map and counters. Reads state, never changes it.
 
 import { toScreen } from './camera.js';
-import { center, corners, neighbors } from '../sim/hex.js';
+import { SIDES, center, corners, neighbors } from '../sim/hex.js';
 import { inBounds, terrainName } from '../sim/map.js';
 
 export const COLORS = {
@@ -30,6 +30,11 @@ export const COLORS = {
   rally: 'rgba(120, 200, 255, 0.95)',
   plan: '#ffffff',
   objective: '#f2d24b',
+  hexside: {
+    wall: { color: '#c9c3b6', width: 0.13, dash: null, inset: 0 },
+    hedge: { color: '#24401f', width: 0.16, dash: [0.12, 0.08], inset: 0 },
+    parapet: { color: '#4a3a22', width: 0.14, dash: null, inset: 0.12 },
+  },
 };
 
 export function fitCanvas(canvas) {
@@ -137,6 +142,7 @@ export function drawMap(ctx, cam, map, width, height, objective) {
       ctx.stroke();
     }
   }
+  drawHexsides(ctx, cam, map);
   if (objective) {
     const c = toScreen(cam, center(objective).x, center(objective).y);
     ctx.strokeStyle = COLORS.objective;
@@ -150,6 +156,31 @@ export function drawMap(ctx, cam, map, width, height, objective) {
     ctx.textAlign = 'center';
     ctx.fillText('OBJ', c.x, c.y - cam.scale * 0.62);
   }
+}
+
+// Walls and hedges on the edge between hexes; parapets just inside their hex.
+function drawHexsides(ctx, cam, map) {
+  for (const [k, sides] of Object.entries(map.sides)) {
+    const [col, row] = k.split(',').map(Number);
+    const h = { col, row };
+    const c = center(h);
+    const pts = corners(h);
+    for (const [side, feature] of Object.entries(sides)) {
+      const style = COLORS.hexside[feature];
+      const i = SIDES.indexOf(side);
+      const [p, q] = [pts[i], pts[(i + 1) % 6]].map((pt) => ({ x: pt.x + (c.x - pt.x) * style.inset, y: pt.y + (c.y - pt.y) * style.inset }));
+      const a = toScreen(cam, p.x, p.y);
+      const b = toScreen(cam, q.x, q.y);
+      ctx.strokeStyle = style.color;
+      ctx.lineWidth = Math.max(2, style.width * cam.scale);
+      ctx.setLineDash(style.dash ? style.dash.map((d) => d * cam.scale) : []);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
 }
 
 // Hex outlines: [{ hex, color, width, dashed, fill }]

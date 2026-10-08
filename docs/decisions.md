@@ -94,7 +94,7 @@ Answers to the follow-up questions:
 - **Turns:** alternating activations, one fireteam at a time.
 - **Counters:** a fireteam of 4 (TL, AR, GRN, RFL). BLUFOR squad = ALPHA + BRAVO.
 - **Dice:** one d6 per firing soldier against a target number; odds shown before, rolls shown after.
-- **Kept:** fog of war, suppression states (shaken, pinned), the odds preview. **Dropped:** directional cover. Flanking now pays through line of sight and concealment and through suppress-then-assault. If fix and flank is weak in testing, a simple fix is trenches that only give cover against fire from the front.
+- **Kept:** fog of war, suppression states (shaken, pinned), the odds preview. **Dropped at first:** directional cover (restored later the same day as hexside cover, see below).
 - takethathill.com could not be fetched from the cloud environment (network policy), so its rules were not copied; the design follows the user's description.
 
 ## Hex milestone 2: map, counters, activations, movement
@@ -110,3 +110,6 @@ Answers to the follow-up questions:
 - **Statuses (user request):** ok, **suppressed** (cannot move, can fire), **pinned** (cannot move, cannot fire). "Shaken" from the first version is gone.
 - **Recovery without the SL:** at the start of each turn every suppressed or pinned unit rolls a d6 and improves one step on `status.recoverOn` (5+). Kept so a team far from the SL is not stuck forever; the SL's 3+ is the reliable way.
 - **Stacking at start:** a map may start the SL in the same hex as a fireteam.
+- **Moved units cannot fire that turn (user request):** a `moved` flag is set by Move and Fast move and cleared at the start of the next turn. `mayFire()` already refuses fire for moved or pinned units; the Fire action (milestone 4) and any later reaction fire use it.
+- **Directional cover is back, on hexsides (user request).** Map entries `hexsides: [{ hex, sides, feature }]`; features in `balance.hexsides`: wall (6+, shared by both hexes), hedge (5+, shared), parapet (6+, its trench hex only). Cover against a shot = the better of the hex's terrain and the feature on the side facing the shooter (`sidesFacing`: the side closest to the line between hex centers; exactly through a corner, both sides and the better one counts). Trench terrain itself drops to 5+ so the parapet (6) is what makes the front strong; from the flank the trench is 5+.
+- **Training map:** the OPFOR trench has parapets on its SW and SE sides (facing BLUFOR), the farm has a wall on its south sides, and there is a short hedge by the road.

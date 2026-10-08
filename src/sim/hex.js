@@ -22,6 +22,34 @@ export const CUBE_DIRS = [
   { x: -1, y: 1, z: 0 }, { x: 0, y: 1, z: -1 }, { x: 1, y: 0, z: -1 },
 ];
 
+// Hex sides, in the same order as CUBE_DIRS: side i faces neighbor i.
+// Pointy-top hexes have no north or south side.
+export const SIDES = ['E', 'SE', 'SW', 'W', 'NW', 'NE'];
+
+export function opposite(side) {
+  return SIDES[(SIDES.indexOf(side) + 3) % 6];
+}
+
+export function neighborOn(h, side) {
+  const c = toCube(h);
+  const d = CUBE_DIRS[SIDES.indexOf(side)];
+  return fromCube({ x: c.x + d.x, y: c.y + d.y, z: c.z + d.z });
+}
+
+// The side(s) of hex `h` facing hex `toward`: the side whose direction is
+// closest to the line between the centers. When the line runs exactly
+// through a corner both sides touching it are returned.
+export function sidesFacing(h, toward) {
+  const a = center(h);
+  const b = center(toward);
+  // Side i is centered on 60 x i degrees, screen y pointing down.
+  const angle = ((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI + 360) % 360;
+  const pos = angle / 60;
+  const lower = Math.floor(pos);
+  if (Math.abs(pos - lower - 0.5) < 1e-6) return [SIDES[lower % 6], SIDES[(lower + 1) % 6]];
+  return [SIDES[Math.round(pos) % 6]];
+}
+
 export function key(h) {
   return `${h.col},${h.row}`;
 }

@@ -135,7 +135,10 @@ function advance(state, rng, events) {
   } else {
     events.push({ type: 'turn_end', turn: state.turn });
     state.turn += 1;
-    for (const u of state.units) u.activated = false;
+    for (const u of state.units) {
+      u.activated = false;
+      u.moved = false;
+    }
     state.activeSide = firstSideToAct(state);
     events.push({ type: 'turn_start', turn: state.turn, side: state.activeSide });
     recoveryRolls(state, rng, events);
@@ -158,6 +161,7 @@ export function applyAction(state, action, rng) {
       events.push({ type: 'moved', unit: unit.id, from: { ...unit.pos }, to: { col: h.col, row: h.row } });
       unit.pos = { col: h.col, row: h.row };
     }
+    unit.moved = true;
     if (action.type === 'fastMove') unit.exposed = true;
   }
   if (action.type === 'rally') {

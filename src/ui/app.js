@@ -212,7 +212,11 @@ export function startApp(initialState) {
     const info = terrainOf(app.state.map, app.state.balance, h);
     const parts = [`${key(h)} ${t}`, `${app.state.balance.map.hexMeters} m hex`, info.move === 'rough' ? 'rough (ends a fast move)' : info.move,
       `casualties on ${info.casualtyOn}+`, info.concealing ? 'concealing' : 'no concealment', info.blocksLos ? 'blocks line of sight' : null].filter(Boolean);
-    const here = unitsAt(app.state, h).map((u) => `${u.side} ${u.team} ${u.soldiers.length} men ${u.status}`);
+    const sides = Object.entries(app.state.map.sides[key(h)] ?? {});
+    if (sides.length) {
+      parts.push(sides.map(([side, f]) => `${f} on ${side} side (casualties on ${app.state.balance.hexsides[f].casualtyOn}+ from that side)`).join(', '));
+    }
+    const here = unitsAt(app.state, h).map((u) => `${u.side} ${u.team} ${u.soldiers.length} men ${u.status}${u.moved ? ', moved (cannot fire this turn)' : ''}`);
     $('status').textContent = parts.join(', ') + (here.length ? ` | ${here.join('; ')}` : '');
   }
 

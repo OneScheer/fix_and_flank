@@ -68,8 +68,14 @@ Rules for the simulation:
 - Pointy-top hex grid, offset rows ("odd-r": odd rows are shifted half a hex right). **1 hex = 50 m.** Maps are hand-built JSON, one character per hex.
 - Each hex has one terrain type. The terrain table in `balance.json` gives each type: movement (normal, stops fast move, impassable), cover (a casualty roll number), concealment (hides units in it), and whether it blocks line of sight through it.
 - Terrain types: open, road, scrub, woods, rubble, building, trench (dug-in fighting positions), water.
+- **Hexside features** sit on one of a hex's six sides (E, SE, SW, W, NW, NE): **wall** and **hedge** are on the edge between two hexes and count for both; a **parapet** belongs to its trench hex only.
 - **Cover and concealment are different.** Cover makes casualties less likely. Concealment hides a unit and, for woods and buildings, blocks sight through the hex.
 - Stacking: one fireteam per hex, plus the squad leader.
+
+### Directional cover (the core mechanic)
+
+- A unit's cover against fire from a hex is the better of its hex's terrain (protects all round) and the feature on the side of its hex facing the shooter. If the line of fire runs exactly through a hex corner, the better of the two sides counts.
+- So a trench with parapets facing south is hard to hurt from the south and only trench-covered from the east or west. Flanking means firing through a side without a feature.
 
 ---
 
@@ -93,8 +99,8 @@ Status: **ok**, **suppressed** (cannot move, can still fire), **pinned** (cannot
 
 | Action | Effect |
 |---|---|
-| Move | 1 hex. The careful way: the team keeps its normal profile. |
-| Fast move | Up to 2 hexes, but entering rough terrain ends it. The team is **exposed** until its next activation: easier to spot and to hit. |
+| Move | 1 hex. The careful way: the team keeps its normal profile. A unit that moved cannot fire until next turn. |
+| Fast move | Up to 2 hexes, but entering rough terrain ends it. The team is **exposed** until its next activation: easier to spot and to hit. It cannot fire until next turn. |
 | Fire | One d6 per soldier (AR rolls two) at a hex in range and line of sight. On a spotted enemy it is aimed fire; on a hex with no spotted enemy it is suppressive fire at worse odds. |
 | Assault | Moving or firing into an **adjacent enemy hex** starts an assault (close combat). |
 
@@ -102,7 +108,8 @@ Status: **ok**, **suppressed** (cannot move, can still fire), **pinned** (cannot
 
 - Target number (TN) on a d6, default 4+, modified by range, the target's cover, the target being exposed, the shooter being suppressed, and firing at a hex with no spotted enemy. Clamped to 2+ .. 6+.
 - Each die at or above the TN is a hit. 1 hit: the target is suppressed (already suppressed: pinned). 2 or more hits: pinned.
-- Each hit gets a casualty roll against the target's cover (for example 4+ in the open, 6 in a trench). Each success removes a soldier.
+- Each hit gets a casualty roll against the target's directional cover (for example 4+ in the open, 5+ in a trench seen from the flank, 6 behind its parapet). Each success removes a soldier.
+- **Units that moved this turn cannot fire** until the next turn.
 - Suppressed teams cannot move and fire at worse odds. Pinned teams cannot move or fire.
 
 ### Assault
@@ -174,4 +181,4 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 
 **Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; anonymous soldiers by role; hand-built maps only; distribution decided later.
 
-**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; drop directional cover. Added the same day: squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire).
+**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; directional cover dropped at first, then restored the same day as hexside cover (walls, hedges, parapets). Also added the same day: moved units cannot fire that turn; squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire).

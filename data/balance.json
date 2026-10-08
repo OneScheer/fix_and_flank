@@ -42,7 +42,12 @@
     "woods": { "move": "rough", "casualtyOn": 5, "concealing": true, "blocksLos": true },
     "rubble": { "move": "rough", "casualtyOn": 6, "concealing": true, "blocksLos": false },
     "building": { "move": "rough", "casualtyOn": 6, "concealing": true, "blocksLos": true },
-    "trench": { "move": "normal", "casualtyOn": 6, "concealing": true, "blocksLos": false },
+    "trench": { "move": "normal", "casualtyOn": 5, "concealing": true, "blocksLos": false },
     "water": { "move": "impassable", "casualtyOn": 4, "concealing": false, "blocksLos": false }
+  },
+  "hexsides": {
+    "wall": { "casualtyOn": 6, "shared": true },
+    "hedge": { "casualtyOn": 5, "shared": true },
+    "parapet": { "casualtyOn": 6, "shared": false }
   }
 }

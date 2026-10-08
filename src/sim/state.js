@@ -12,6 +12,7 @@
 //     status: 'ok' | 'suppressed' | 'pinned' | 'eliminated',
 //                         suppressed: cannot move; pinned: cannot move or fire
 //     activated,          has acted this turn
+//     moved,              moved or fast moved this turn: cannot fire until next turn
 //     exposed,            fast moved; until its own next activation
 //   }],
 // }
@@ -29,6 +30,7 @@ export function createState({ balance, map, seed }) {
     soldiers: [...(u.soldiers ?? (u.kind === 'leader' ? balance.unit.leaderRoles : balance.unit.roles))],
     status: 'ok',
     activated: false,
+    moved: false,
     exposed: false,
   }));
   const state = {
@@ -78,6 +80,15 @@ export function unitAt(state, h) {
 // Status one step better: pinned -> suppressed -> ok.
 export function betterStatus(status) {
   return status === 'pinned' ? 'suppressed' : 'ok';
+}
+
+// Fire rules start in milestone 4; these two are fixed already: a unit that
+// moved this turn cannot fire, and a pinned unit cannot shoot back.
+export function mayFire(unit) {
+  if (unit.status === 'eliminated') return { ok: false, reason: `${unit.team} is eliminated` };
+  if (unit.status === 'pinned') return { ok: false, reason: `${unit.team} is pinned and cannot fire` };
+  if (unit.moved) return { ok: false, reason: `${unit.team} moved this turn and cannot fire until next turn` };
+  return { ok: true };
 }
 
 export function isSuppressed(unit) {
