@@ -5,7 +5,7 @@
 
 import { moveOptions, validateAction } from '../sim/actions.js';
 import { assaultVia } from '../sim/assault.js';
-import { center, hexAt, key, mapBounds, neighbors, same } from '../sim/hex.js';
+import { center, distance, hexAt, key, mapBounds, neighbors, same } from '../sim/hex.js';
 import { visibleFrom } from '../sim/los.js';
 import { inBounds, terrainName, terrainOf } from '../sim/map.js';
 import { fireDice } from '../sim/combat.js';
@@ -174,7 +174,8 @@ export function startApp(initialState, { reveal = false } = {}) {
     }
     for (const e of r.events.filter((x) => x.type === 'fire')) {
       if (!eventText(r.state, e, PLAYER_SIDE)) continue;
-      app.shots.push({ from: e.from, to: e.hex, start: now + delay, side: r.state.units[e.unit].side });
+      const shooter = r.state.units[e.unit];
+      app.shots.push({ from: e.from, to: e.hex, start: now + delay, side: shooter.side, tag: shooter.kind === 'leader' ? 'SL' : shooter.team.charAt(0) });
       delay += SHOT_GAP_MS;
     }
     app.state = r.state;
@@ -310,7 +311,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     if (firefight()) {
       const h = app.hover;
       if (h && options().fire.has(key(h))) return previewAction(projectedFor(u.id), { type: 'fire', unit: u.id, target: h });
-      return `${u.team} selected (${fireDiceText(u)}). Point at a hex to see the odds; click to fire. Red ring: spotted enemy (aimed fire; in the next hex, an assault). Elsewhere in the red area: suppressive fire.${deselect}`;
+      return `${u.team} selected (${fireDiceText(u)}). Point at a hex to see the odds; click to fire. Blue ring: spotted enemy (aimed fire). Red ring, in the next hex: assault. Elsewhere in the shaded area: suppressive fire.${deselect}`;
     }
     const lead = u.kind === 'leader' ? ' Teams in his hex rally for sure in the rally phase; further away the roll must beat the distance to him.' : '';
     const h = app.hover;
@@ -379,9 +380,10 @@ export function startApp(initialState, { reveal = false } = {}) {
     for (const k of o.fire) {
       const [col, row] = k.split(',').map(Number);
       const h = { col, row };
-      marks.push(spottedHere(h) ? { hex: h, color: COLORS.fire, width: 3, fill: COLORS.fireZone } : { hex: h, color: null, fill: COLORS.fireZone, inset: 0 });
+      const ring = !spottedHere(h) ? null : o.from && distance(o.from, h) === 1 ? COLORS.assault : COLORS.fireInk;
+      marks.push(ring ? { hex: h, color: ring, width: 3, fill: COLORS.fireZone } : { hex: h, color: null, fill: COLORS.fireZone, inset: 0 });
     }
-    for (const h of o.assault) marks.push({ hex: h, color: COLORS.fire, width: 4 });
+    for (const h of o.assault) marks.push({ hex: h, color: COLORS.assault, width: 4 });
     if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
     if (app.view && app.selected !== null) {
       const from = projectedFor(app.selected).units[app.selected].pos;
@@ -397,6 +399,9 @@ export function startApp(initialState, { reveal = false } = {}) {
     drawSuspected(ctx, app.cam, knownEnemies(s, PLAYER_SIDE).filter((c) => c.level === 'suspected').map((c) => c.pos));
 
     // Every planned order: a line from where the unit will be when it runs.
+    // Fire and assault lines go on top of the counters (drawn last), so the
+    // crosshair shows on its target.
+    const overlay = [];
     if (planning()) {
       const checks = checkPlan(s, app.plan);
       app.plan.forEach((a, i) => {
@@ -404,18 +409,14 @@ export function startApp(initialState, { reveal = false } = {}) {
         const from = projectOrders(s, app.plan.slice(0, i)).units[a.unit].pos;
         if (a.type === 'fire' || assaultVia(projectOrders(s, app.plan.slice(0, i)), a)) {
           const to = a.type === 'fire' ? a.target : a.to;
-          drawFire(ctx, app.cam, from, to, !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.fire);
+          const color = !checks[i].ok ? COLORS.invalid : a.type === 'move' ? COLORS.assault : a.unit === app.selected ? COLORS.plan : COLORS.fireInk;
+          overlay.push(() => drawFire(ctx, app.cam, from, to, color, 1, unit(a.unit).kind === 'leader' ? 'SL' : unit(a.unit).team.charAt(0)));
           return;
         }
         const path = a.type === 'move' ? [a.to] : a.path;
-        const color = !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.move;
+        const color = !checks[i].ok ? COLORS.invalid : a.unit === app.selected ? COLORS.plan : COLORS.move;
         drawPath(ctx, app.cam, from, path, color);
       });
-    }
-
-    app.shots = app.shots.filter((x) => now < x.start + SHOT_MS);
-    for (const x of app.shots) {
-      if (now >= x.start) drawFire(ctx, app.cam, x.from, x.to, x.side === PLAYER_SIDE ? COLORS.blufor : COLORS.opfor, 1 - (now - x.start) / SHOT_MS);
     }
 
     const animating = app.anim.length;
@@ -431,6 +432,12 @@ export function startApp(initialState, { reveal = false } = {}) {
     // Teams first so the SL sits on top.
     counters.sort((a, b) => (a.unit.kind === 'leader') - (b.unit.kind === 'leader'));
     drawCounters(ctx, app.cam, counters, s.balance.unit.roles);
+
+    for (const f of overlay) f();
+    app.shots = app.shots.filter((x) => now < x.start + SHOT_MS);
+    for (const x of app.shots) {
+      if (now >= x.start) drawFire(ctx, app.cam, x.from, x.to, x.side === PLAYER_SIDE ? COLORS.fireInk : COLORS.hostileFireInk, 1 - (now - x.start) / SHOT_MS, x.tag);
+    }
   }
 
   // ---- input ----

@@ -198,3 +198,12 @@ Answers to the follow-up questions:
   - `assault.attackTn.suppressed` 4 → 3: the finish after a successful fix is reliable. A pinned defender is still better to assault (it cannot shoot back).
   - Rejected: `movement.fastMoveHexes` 3 (frontal jumped to 24%, the flank did not gain).
 - **Result:** over seeds 1-200, frontal 0.0%, fix and flank 74.5% (average win on turn 10). Over seeds 201-1000 in blocks of 200: frontal 0-1%, fix and flank 74.5-83%. Assault odds on mission 1 now: unsuppressed dug-in defender 20%, suppressed 74%, pinned 99%.
+
+## Counter and marker graphics (user request)
+
+- Taken from the user's design canvas "Fireteam Counters" (two boards: counters, and state and fire markers), drawn on the canvas in `src/render/hexmap.js`; no image files.
+- **Counters:** NATO frame with the infantry X and a heavy ink outline (#15181A). BLUFOR: light blue rectangle (#80E0FF). OPFOR is not in the design; it uses the NATO hostile frame, a light red diamond (#FF8080). Echelon mark above: fireteam = circle with a slash, the SL = a squad dot. Team letter (or "SL") to the right on a pale plate; one pip per soldier below, filled = present, hollow = lost. The design's per-soldier hitpoints are not a rule here: one pip per soldier.
+- **Markers:** suppressed = amber badge (#F2B33D) with one chevron; pinned = dark red badge (#8E1B12) with two white chevrons and the counter hatched; both on the frame's top-right corner. Exposed (not in the design) = a pale badge with "!" on the top-left corner, same shape. The design's 0-100 suppression scale is not used: statuses stay ok / suppressed / pinned.
+- **Fire:** dashed line from the shooter to a crosshair on the target hex, tagged with the shooter's letter; navy (#1F3F8F) for BLUFOR, dark red for OPFOR. Planned assaults use the same marker in orange-red. Fire markers are drawn over the counters.
+- **Fonts:** the design's Barlow Condensed is used if installed, else a condensed system font. Not loaded from Google Fonts: no network calls at runtime.
+- The SL sharing a hex with a team now sits at its lower left, clear of the team's badges.

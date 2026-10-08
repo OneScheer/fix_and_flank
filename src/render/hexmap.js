@@ -17,18 +17,28 @@ export const COLORS = {
     trench: '#7d6a48',
     water: '#2f5470',
   },
-  blufor: '#4a7fd0',
-  opfor: '#d04a4a',
-  counterEdge: '#0b0d0a',
-  counterText: '#ffffff',
-  suppressed: '#e8c547',
-  pinned: '#ff6a3d',
-  exposed: '#ffffff',
+  // Counters and markers after the "Fireteam Counters" design: NATO frames,
+  // ink outlines, amber suppressed and dark red pinned badges.
+  blufor: '#80e0ff',
+  opfor: '#ff8080',
+  ink: '#15181a',
+  counterEdge: '#15181a',
+  counterText: '#15181a',
+  label: '#f6f4ee',
+  suppressed: '#f2b33d',
+  pinned: '#8e1b12',
+  pinnedInk: '#ffffff',
+  hatch: 'rgba(21, 24, 26, 0.28)',
+  exposed: '#f6f4ee',
   select: '#ffffff',
+  invalid: '#ff6a3d',
+  fireInk: '#1f3f8f',
+  hostileFireInk: '#8e1b12',
   move: 'rgba(140, 230, 140, 0.9)',
   fast: 'rgba(255, 190, 80, 0.9)',
-  fire: '#ff5a3d',
-  fireZone: 'rgba(255, 90, 60, 0.13)',
+  fire: '#1f3f8f',
+  fireZone: 'rgba(31, 63, 143, 0.2)',
+  assault: '#ff5a3d',
   suspect: 'rgba(255, 190, 80, 0.9)',
   plan: '#ffffff',
   objective: '#f2d24b',
@@ -234,110 +244,269 @@ export function drawPath(ctx, cam, from, path, color) {
   ctx.stroke();
 }
 
-// A line of fire: dashed, from hex center to hex center.
-export function drawFire(ctx, cam, from, to, color, alpha = 1) {
+const FONT = "'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif";
+
+// Fire marker: crosshair (ring, four ticks, center dot) of radius r at (x, y).
+function crosshair(ctx, x, y, r, color, width) {
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+    ctx.moveTo(x + dx * r, y + dy * r);
+    ctx.lineTo(x + dx * r * 0.4, y + dy * r * 0.4);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, r * 0.13, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// A line of fire: dashed, from hex center to a crosshair on the target hex,
+// tagged with the shooter's letter when given.
+export function drawFire(ctx, cam, from, to, color, alpha = 1, tag = null) {
   const a = center(from);
   const b = center(to);
   const p = toScreen(cam, a.x, a.y);
   const q = toScreen(cam, b.x, b.y);
+  const r = Math.max(7, cam.scale * 0.42);
+  const len = Math.hypot(q.x - p.x, q.y - p.y) || 1;
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.strokeStyle = color;
-  ctx.lineWidth = Math.max(2, cam.scale * 0.07);
-  ctx.setLineDash([cam.scale * 0.18, cam.scale * 0.1]);
+  ctx.lineWidth = Math.max(2, cam.scale * 0.06);
+  ctx.setLineDash([cam.scale * 0.2, cam.scale * 0.14]);
   ctx.beginPath();
   ctx.moveTo(p.x, p.y);
-  ctx.lineTo(q.x, q.y);
+  ctx.lineTo(q.x - ((q.x - p.x) / len) * r * 0.55, q.y - ((q.y - p.y) / len) * r * 0.55);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.arc(q.x, q.y, Math.max(3, cam.scale * 0.12), 0, Math.PI * 2);
-  ctx.stroke();
+  crosshair(ctx, q.x, q.y, r, color, Math.max(2, cam.scale * 0.06));
+  if (tag) {
+    const size = Math.max(10, Math.round(cam.scale * 0.32));
+    ctx.font = `700 ${size}px ${FONT}`;
+    const tw = ctx.measureText(tag).width + size * 0.4;
+    const tx = q.x - r * 0.75 - tw; // upper left: clear of the target's state badge
+    const ty = q.y - r * 1.05;
+    ctx.fillStyle = color;
+    ctx.fillRect(tx, ty, tw, size * 1.1);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(tag, tx + tw / 2, ty + size * 0.58);
+  }
   ctx.restore();
 }
 
-function badge(ctx, x, y, r, fill, text) {
-  ctx.fillStyle = fill;
+function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = COLORS.counterEdge;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.fillStyle = '#000000';
-  ctx.font = `bold ${Math.round(r * 1.3)}px ui-monospace, monospace`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(text, x, y + 1);
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }
 
-// NATO-style counters. units: [{ unit, pos: {x, y} world center, selected }].
-// A fireteam: square with the infantry X, team name, one pip per soldier.
-// The SL: smaller, with the headquarters staff line, drawn at the hex's
-// upper right when it shares the hex with a team.
+// A chevron pointing down, centered at (x, y), w wide.
+function chevron(ctx, x, y, w, color, width) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineJoin = 'miter';
+  ctx.beginPath();
+  ctx.moveTo(x - w / 2, y - w * 0.3);
+  ctx.lineTo(x, y + w * 0.3);
+  ctx.lineTo(x + w / 2, y - w * 0.3);
+  ctx.stroke();
+}
+
+// State badge on the counter's top-right corner: suppressed = amber, one
+// chevron; pinned = dark red, two white chevrons. Exposed: a pale "!" badge
+// on the top-left corner.
+function stateBadge(ctx, x, y, unit, size) {
+  const w = size * 0.48;
+  if (unit.status === 'suppressed' || unit.status === 'pinned') {
+    const pinned = unit.status === 'pinned';
+    const h = size * (pinned ? 0.42 : 0.33);
+    roundRect(ctx, x - w / 2, y - h / 2, w, h, size * 0.06);
+    ctx.fillStyle = pinned ? COLORS.pinned : COLORS.suppressed;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.ink;
+    ctx.lineWidth = Math.max(1, size * 0.03);
+    ctx.stroke();
+    const ink = pinned ? COLORS.pinnedInk : COLORS.ink;
+    const cw = w * 0.45;
+    const lw = Math.max(1.2, size * 0.045);
+    if (pinned) {
+      chevron(ctx, x, y - h * 0.17, cw, ink, lw);
+      chevron(ctx, x, y + h * 0.2, cw, ink, lw);
+    } else {
+      chevron(ctx, x, y, cw, ink, lw);
+    }
+  }
+}
+
+function exposedBadge(ctx, x, y, size) {
+  const w = size * 0.3;
+  const h = size * 0.33;
+  roundRect(ctx, x - w / 2, y - h / 2, w, h, size * 0.06);
+  ctx.fillStyle = COLORS.exposed;
+  ctx.fill();
+  ctx.strokeStyle = COLORS.ink;
+  ctx.lineWidth = Math.max(1, size * 0.03);
+  ctx.stroke();
+  ctx.fillStyle = COLORS.ink;
+  ctx.font = `700 ${Math.round(h * 0.95)}px ${FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('!', x, y + h * 0.05);
+}
+
+// The NATO frame: friendly = rectangle, hostile = diamond; infantry X inside.
+function frame(ctx, side, x0, y0, w, h) {
+  ctx.beginPath();
+  if (side === 'OPFOR') {
+    const cx = x0 + w / 2;
+    const cy = y0 + h / 2;
+    const r = h * 0.72;
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+  } else {
+    ctx.rect(x0, y0, w, h);
+  }
+}
+
+function infantryX(ctx, side, x0, y0, w, h, lw) {
+  ctx.strokeStyle = COLORS.ink;
+  ctx.lineWidth = lw;
+  ctx.beginPath();
+  if (side === 'OPFOR') {
+    const cx = x0 + w / 2;
+    const cy = y0 + h / 2;
+    const d = h * 0.36;
+    ctx.moveTo(cx - d, cy - d);
+    ctx.lineTo(cx + d, cy + d);
+    ctx.moveTo(cx + d, cy - d);
+    ctx.lineTo(cx - d, cy + d);
+  } else {
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x0 + w, y0 + h);
+    ctx.moveTo(x0 + w, y0);
+    ctx.lineTo(x0, y0 + h);
+  }
+  ctx.stroke();
+}
+
+// Echelon mark above the frame: fireteam = circle with a slash, squad (the SL) = one dot.
+function echelon(ctx, kind, x, y, size) {
+  ctx.strokeStyle = COLORS.ink;
+  ctx.fillStyle = COLORS.ink;
+  if (kind === 'leader') {
+    ctx.beginPath();
+    ctx.arc(x, y, size * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  const r = size * 0.085;
+  ctx.lineWidth = Math.max(1, size * 0.03);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.moveTo(x - r * 1.5, y + r * 1.5);
+  ctx.lineTo(x + r * 1.5, y - r * 1.5);
+  ctx.stroke();
+}
+
+// Counters after the "Fireteam Counters" design. units: [{ unit, pos: {x, y}
+// world center, selected, stackedWithTeam, ghost }]. A fireteam: NATO frame
+// with the infantry X and the fireteam mark above, its letter to the right,
+// one pip per soldier below (filled: present, hollow: lost). Pinned teams are
+// hatched. The SL: a smaller counter with the squad dot, at the hex's lower
+// left when it shares the hex with a team.
 export function drawCounters(ctx, cam, units, roster) {
   for (const { unit, pos, selected, stackedWithTeam, ghost } of units) {
     if (unit.status === 'eliminated') continue;
     const leader = unit.kind === 'leader';
-    const size = cam.scale * (leader ? 0.62 : 1.0);
-    const offset = leader && stackedWithTeam ? cam.scale * 0.5 : 0;
-    const c = toScreen(cam, pos.x + offset / cam.scale, pos.y - offset / cam.scale);
+    const size = cam.scale * (leader ? 0.55 : 0.92);
+    // Sharing a hex with a team, the SL sits at its lower left, clear of the team's badges and pips.
+    const stacked = leader && stackedWithTeam;
+    const c = toScreen(cam, pos.x - (stacked ? 0.62 : 0), pos.y + (stacked ? 0.6 : 0));
     const w = size;
-    const h = size * 0.78;
-    const x0 = c.x - w / 2;
+    const h = size / 1.5;
+    const x0 = c.x - w / 2 - (leader ? 0 : size * 0.1);
     const y0 = c.y - h / 2;
+    const lw = Math.max(1.2, size * 0.045);
 
     ctx.globalAlpha = ghost ? 0.3 : unit.activated ? 0.55 : 1;
-    ctx.fillStyle = unit.side === 'OPFOR' ? COLORS.opfor : COLORS.blufor;
-    ctx.fillRect(x0, y0, w, h);
-    ctx.strokeStyle = selected ? COLORS.select : COLORS.counterEdge;
-    ctx.lineWidth = selected ? 3 : 1.5;
-    ctx.strokeRect(x0, y0, w, h);
-
-    // Symbol box
-    const bw = w * 0.56;
-    const bh = h * 0.42;
-    const bx = c.x - bw / 2;
-    const by = y0 + h * 0.12;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = Math.max(1, size * 0.04);
-    ctx.strokeRect(bx, by, bw, bh);
-    ctx.beginPath();
-    ctx.moveTo(bx, by);
-    ctx.lineTo(bx + bw, by + bh);
-    ctx.moveTo(bx + bw, by);
-    ctx.lineTo(bx, by + bh);
-    ctx.stroke();
-    if (leader) {
-      ctx.beginPath();
-      ctx.moveTo(bx, by + bh);
-      ctx.lineTo(bx, by + bh + h * 0.3);
+    if (selected) {
+      frame(ctx, unit.side, x0, y0, w, h);
+      ctx.strokeStyle = COLORS.select;
+      ctx.lineWidth = lw + Math.max(3, size * 0.1);
       ctx.stroke();
     }
+    frame(ctx, unit.side, x0, y0, w, h);
+    ctx.fillStyle = unit.side === 'OPFOR' ? COLORS.opfor : COLORS.blufor;
+    ctx.fill();
+    if (unit.status === 'pinned') {
+      ctx.save();
+      frame(ctx, unit.side, x0, y0, w, h);
+      ctx.clip();
+      ctx.strokeStyle = COLORS.hatch;
+      ctx.lineWidth = Math.max(1, size * 0.03);
+      const step = Math.max(4, size * 0.1);
+      ctx.beginPath();
+      for (let d = -h * 2; d < w + h * 2; d += step) {
+        ctx.moveTo(x0 + d, y0 - h);
+        ctx.lineTo(x0 + d + h * 2, y0 + h * 2);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    infantryX(ctx, unit.side, x0, y0, w, h, lw);
+    frame(ctx, unit.side, x0, y0, w, h);
+    ctx.strokeStyle = COLORS.ink;
+    ctx.lineWidth = lw;
+    ctx.stroke();
 
+    const top = unit.side === 'OPFOR' ? y0 + h / 2 - h * 0.72 : y0;
+    echelon(ctx, unit.kind, x0 + w / 2, top - size * 0.16, size);
+
+    // Letter (team) or SL to the right of the frame, on a pale plate so it reads on any terrain.
+    const label = leader ? 'SL' : unit.team.charAt(0);
+    const fs = Math.max(9, Math.round(size * (leader ? 0.42 : 0.4)));
+    ctx.font = `700 ${fs}px ${FONT}`;
+    const lx = x0 + w + (unit.side === 'OPFOR' ? h * 0.25 : 0) + size * 0.06;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = COLORS.label;
+    ctx.fillRect(lx - fs * 0.08, y0 + h - fs * 0.92, tw + fs * 0.16, fs * 0.98);
     ctx.fillStyle = COLORS.counterText;
-    ctx.font = `bold ${Math.max(8, Math.round(size * 0.2))}px ui-monospace, monospace`;
-    ctx.textAlign = 'center';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'alphabetic';
-    ctx.fillText(unit.team, c.x + (leader ? w * 0.1 : 0), y0 + h * 0.86);
+    ctx.fillText(label, lx, y0 + h - fs * 0.12);
 
-    // Pips: soldiers left out of the full roster.
+    // Pips: one per soldier of the full team, below the frame.
     if (!leader) {
-      const total = roster.length;
-      const r = Math.max(1.5, size * 0.045);
-      for (let i = 0; i < total; i++) {
-        const px = x0 + w * 0.12 + i * r * 2.6;
+      const r = Math.max(1.6, size * 0.045);
+      const gap = r * 2.7;
+      const py = (unit.side === 'OPFOR' ? y0 + h / 2 + h * 0.72 : y0 + h) + r * 2.2;
+      const px0 = x0 + w / 2 - ((roster.length - 1) * gap) / 2;
+      ctx.lineWidth = Math.max(1, r * 0.5);
+      for (let i = 0; i < roster.length; i++) {
         ctx.beginPath();
-        ctx.arc(px, y0 + h * 0.07 + r, r, 0, Math.PI * 2);
-        ctx.fillStyle = i < unit.soldiers.length ? '#ffffff' : 'rgba(0, 0, 0, 0.4)';
+        ctx.arc(px0 + i * gap, py, r, 0, Math.PI * 2);
+        ctx.fillStyle = i < unit.soldiers.length ? COLORS.ink : COLORS.label;
         ctx.fill();
+        ctx.strokeStyle = COLORS.ink;
+        ctx.stroke();
       }
     }
+    ctx.globalAlpha = ghost ? 0.3 : 1;
+    const right = unit.side === 'OPFOR' ? x0 + w / 2 + h * 0.6 : x0 + w;
+    stateBadge(ctx, right, top + size * 0.04, unit, size);
+    if (unit.exposed) exposedBadge(ctx, unit.side === 'OPFOR' ? x0 + w / 2 - h * 0.6 : x0, top + size * 0.04, size);
     ctx.globalAlpha = 1;
-
-    const br = Math.max(6, size * 0.16);
-    if (unit.status === 'suppressed') badge(ctx, x0 + w, y0, br, COLORS.suppressed, 'S');
-    if (unit.status === 'pinned') badge(ctx, x0 + w, y0, br, COLORS.pinned, 'P');
-    if (unit.exposed) badge(ctx, x0, y0, br, COLORS.exposed, '!');
   }
 }
