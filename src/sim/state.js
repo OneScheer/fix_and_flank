@@ -1,102 +1,85 @@
 // Game state shape.
 //
 // state = {
-//   turn, tick, ticksPerTurn, tickSec,
-//   rngState,            uint32, RNG state at the start of the next turn
-//   balance, weapons, map,  frozen, shared by reference between states
-//   contacts: { [side]: { [enemyId]: { level, pos, lastSeenSec } } }  (see spotting.js)
-//   soldiers: [{
-//     id, side, team, role, pos: {x, y}, stance, suppression, status, hp,
-//     weapon, ammo, grenades: { hand, 40mm }, fireCooldown (s), lastFiredSec, underFireUntilSec,
-//     move: null | { dest, speed, path: [{x, y}], i, progress, blocked },
-//     task: null (fire at will) | { type: 'fire' | 'suppress' | 'overwatch' | 'assault' | 'grenade', ... },
+//   turn,                 1-based
+//   activeSide,           side whose fireteam acts next
+//   rngState,             uint32, RNG state for the next action
+//   balance, map,         frozen, shared by reference between states
+//   units: [{
+//     id, side, team, pos: {col, row},
+//     kind: 'team' | 'leader',                a fireteam, or the squad leader (SL)
+//     soldiers: ['TL', 'AR', 'GRN', 'RFL'],   who is left (a leader: ['SL'])
+//     status: 'ok' | 'suppressed' | 'pinned' | 'eliminated',
+//                         suppressed: cannot move; pinned: cannot move or fire
+//     activated,          has acted this turn
+//     exposed,            fast moved; until its own next activation
 //   }],
-//   grenades: [{ by, side, kind, aim, at, landsAtSec }]   in flight
 // }
 //
-// Soldiers are stored in id order. Everything except balance and map is
-// plain data, so a state can be cloned with structuredClone and compared
-// with deepEqual.
+// Units are stored in id order. Everything except balance and map is plain
+// data, so a state can be cloned with structuredClone and compared with deepEqual.
 
-export function ticksPerTurn(balance) {
-  const { durationSec, tickSec } = balance.turn;
-  const ticks = durationSec / tickSec;
-  if (!Number.isInteger(ticks)) {
-    throw new Error(`turn.durationSec (${durationSec}) must be a whole multiple of turn.tickSec (${tickSec})`);
-  }
-  return ticks;
-}
-
-export function createState({ balance, weapons, map, seed }) {
-  const soldiers = (map?.units ?? []).map((u, id) => {
-    const weapon = u.weapon ?? weapons.roleWeapons[u.role] ?? weapons.defaultWeapon;
-    if (!weapons.weapons[weapon]) throw new Error(`Unknown weapon '${weapon}' for ${u.side} ${u.team} ${u.role}`);
-    return {
-      id,
-      side: u.side,
-      team: u.team,
-      role: u.role,
-      pos: { x: u.pos[0], y: u.pos[1] },
-      stance: u.stance ?? balance.soldier.startStance,
-      suppression: 0,
-      status: 'active',
-      hp: balance.soldier.hp,
-      weapon,
-      ammo: weapons.weapons[weapon].ammo,
-      grenades: { ...(weapons.roleGrenades?.[u.role] ?? weapons.defaultGrenades ?? {}) },
-      fireCooldown: 0,
-      lastFiredSec: null,
-      underFireUntilSec: null,
-      move: null,
-      task: null,
-    };
-  });
-  const contacts = {};
-  for (const s of soldiers) contacts[s.side] ??= {};
-  return {
-    turn: 0,
-    tick: 0,
-    ticksPerTurn: ticksPerTurn(balance),
-    tickSec: balance.turn.tickSec,
-    seed: seed >>> 0,
+export function createState({ balance, map, seed }) {
+  const units = (map?.units ?? []).map((u, id) => ({
+    id,
+    side: u.side,
+    team: u.team,
+    pos: { col: u.pos[0], row: u.pos[1] },
+    kind: u.kind ?? 'team',
+    soldiers: [...(u.soldiers ?? (u.kind === 'leader' ? balance.unit.leaderRoles : balance.unit.roles))],
+    status: 'ok',
+    activated: false,
+    exposed: false,
+  }));
+  const state = {
+    turn: 1,
+    activeSide: null,
     rngState: seed >>> 0,
+    seed: seed >>> 0,
     balance,
-    weapons,
     map,
-    soldiers,
-    contacts,
-    grenades: [],
+    units,
   };
+  state.activeSide = firstSideToAct(state);
+  return state;
 }
 
-// Copy everything a step may change. balance and map stay shared.
 export function cloneState(state) {
-  return {
-    ...state,
-    soldiers: structuredClone(state.soldiers),
-    contacts: structuredClone(state.contacts),
-    grenades: structuredClone(state.grenades ?? []),
-  };
+  return { ...state, units: structuredClone(state.units) };
 }
 
-export function isOnMap(soldier) {
-  return soldier.status !== 'dead';
+export function isActive(unit) {
+  return unit.status !== 'eliminated';
 }
 
-// Pinned soldiers will not move; down and dead ones cannot.
-export function canMove(soldier) {
-  return soldier.status !== 'pinned' && soldier.status !== 'down' && soldier.status !== 'dead';
+export function canActivate(state, unit) {
+  return isActive(unit) && !unit.activated;
 }
 
-export function teamMembers(state, side, team) {
-  return state.soldiers.filter((s) => s.side === side && s.team === team && canMove(s));
+export function sidesWithActivations(state) {
+  return state.balance.turn.initiative.filter((side) => state.units.some((u) => u.side === side && canActivate(state, u)));
 }
 
-// Soldiers of a team who can still act (fire, change stance), pinned included.
-export function teamActive(state, side, team) {
-  return state.soldiers.filter((s) => s.side === side && s.team === team && s.status !== 'down' && s.status !== 'dead');
+// The side with initiative if it has a team left to act, else the next one.
+export function firstSideToAct(state) {
+  return sidesWithActivations(state)[0] ?? null;
 }
 
-export function teamsOf(state, side) {
-  return [...new Set(state.soldiers.filter((s) => s.side === side).map((s) => s.team))];
+export function unitsAt(state, h) {
+  return state.units.filter((u) => isActive(u) && u.pos.col === h.col && u.pos.row === h.row);
+}
+
+// The fireteam in a hex if there is one, else the leader.
+export function unitAt(state, h) {
+  const here = unitsAt(state, h);
+  return here.find((u) => u.kind === 'team') ?? here[0] ?? null;
+}
+
+// Status one step better: pinned -> suppressed -> ok.
+export function betterStatus(status) {
+  return status === 'pinned' ? 'suppressed' : 'ok';
+}
+
+export function isSuppressed(unit) {
+  return unit.status === 'suppressed' || unit.status === 'pinned';
 }

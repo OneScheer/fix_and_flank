@@ -7,35 +7,24 @@ export function loadJson(relPath) {
 }
 
 export const balance = loadJson('data/balance.json');
-export const weapons = loadJson('data/weapons.json');
 
-// Small legend for hand-drawn test maps.
+// Small legend for hand-drawn test maps (one character per hex, odd-r rows).
 export const LEGEND = {
-  '.': { terrain: 'grass' },
-  '=': { terrain: 'road' },
-  'T': { terrain: 'forest', cover: 'light', concealment: 'full' },
-  '~': { terrain: 'water' },
-  '#': { terrain: 'open', height: 2, cover: 'hard', concealment: 'full' },
-  '-': { terrain: 'grass', height: 1, cover: 'hard' },
-  'D': { terrain: 'open', feature: 'door' },
-  'W': { terrain: 'open', height: 1, cover: 'hard', concealment: 'partial', feature: 'window' },
+  '.': 'open', '=': 'road', ':': 'scrub', 'T': 'woods', '%': 'rubble', 'B': 'building', 'n': 'trench', '~': 'water',
 };
 
 export function makeMap(rows, units = []) {
-  return parseMap({ width: rows[0].length, height: rows.length, legend: LEGEND, rows, units });
+  return parseMap({ width: rows[0].length, height: rows.length, legend: LEGEND, rows, units }, balance);
 }
 
 export function makeState(rows, units = [], seed = 1) {
-  return createState({ balance, weapons, map: makeMap(rows, units), seed });
+  return createState({ balance, map: makeMap(rows, units), seed });
 }
 
 export function trainingState(seed = 1) {
-  return createState({ balance, weapons, map: parseMap(loadJson('data/maps/training.json')), seed });
+  return createState({ balance, map: parseMap(loadJson('data/maps/training.json'), balance), seed });
 }
 
-// Empty everyone's magazines, for tests of movement or spotting alone.
-export function holdFire(state) {
-  return { ...state, soldiers: state.soldiers.map((s) => ({ ...s, ammo: 0 })) };
-}
-
-export const grass = (w, h) => Array.from({ length: h }, () => '.'.repeat(w));
+export const open = (w, h) => Array.from({ length: h }, () => '.'.repeat(w));
+export const unit = (side, team, col, row, extra = {}) => ({ side, team, pos: [col, row], ...extra });
+export const H = (col, row) => ({ col, row });

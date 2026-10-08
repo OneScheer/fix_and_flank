@@ -1,20 +1,22 @@
 # CLAUDE.md: Fix and Flank
 
-A turn-based, plan-then-watch small unit infantry tactics game for the browser. Modern setting, dismounted infantry, squad scale. The core loop is **fix and flank**: pin the enemy with a base of fire, maneuver a second element onto their exposed side, then finish them. A frontal assault on a dug-in enemy should usually fail.
+A turn-based hex wargame of small unit infantry tactics for the browser. Modern setting, dismounted infantry, squad scale. The core loop is **fix and flank**: pin the enemy with a base of fire, maneuver a second element close, then finish them with an assault. A frontal assault on a dug-in enemy should usually fail.
 
 The game is for a community of Arma Reforger players. It should feel familiar to them (terminology, tactics) and ideally double as a place to rehearse squad drills.
 
-Reference for the feel: Brothers in Arms (fix, flank, finish). Reference for the format: Contrail Tactics (plan every turn, press ENGAGE, watch ten seconds play out, the UI tells you whether a shot will happen before you commit).
+Reference for the feel: Brothers in Arms (fix, flank, finish). Reference for the format: Take That Hill (https://takethathill.com/play): traditional hexes, fireteam counters, dice, few orders.
+
+The first version (2 m tiles, real-time WEGO with 10 second turns, percentage hit chances, directional cover, seven order types) was replaced on 2026-10-08 at the user's request. It is in git history up to commit `acfdbe8`.
 
 ---
 
 ## 1. Design pillars
 
 1. **Fix and flank is the optimal strategy.** If a frontal assault is ever the best plan against an entrenched enemy, the balance is wrong.
-2. **Nothing is hidden dice.** The player can always see why something happened (in the order preview before committing, and in the after-action replay afterward).
-3. **Turn-based, simultaneous resolution (WEGO).** Nothing moves while the player plans. Both sides' orders resolve together over one 10 second turn.
-4. **Small and readable.** Squad level: 8 to 12 friendly soldiers in two fireteams. Commands are given to teams, not individuals.
-5. **Real tactics, abstract presentation.** Correct doctrine and terminology, simple visuals (NATO-style counters, flat tiles). No made-up superweapons.
+2. **Dice, but never hidden dice.** Combat is resolved with d6 rolls. Before committing, the player sees the target number, the dice and the odds. After, the player sees the actual rolls and why.
+3. **Turn-based, alternating activations.** Sides take turns activating one fireteam at a time until every fireteam has acted; then a new turn starts. Nothing moves while the player decides.
+4. **Small and readable.** A BLUFOR squad of two fireteams against a few OPFOR fireteams. Each counter is a fireteam. Three orders: Move, Fast move, Fire.
+5. **Real tactics, abstract presentation.** Correct doctrine and terminology, simple visuals (NATO-style counters, flat hexes). No made-up superweapons.
 
 ---
 
@@ -35,138 +37,117 @@ The simulation must be completely separate from rendering and UI.
 ```
 /src
   /sim        pure logic, no DOM, no Math.random
+    hex.js          hex coordinates, neighbors, distance, lines
+    map.js          map loading, terrain lookups
     state.js        game state shape
-    step.js         advance the state by one tick
-    los.js          line of sight and concealment
-    cover.js        directional cover from neighbor tiles
-    combat.js       hit chance, suppression, damage
+    actions.js      action validation and resolution (the step function)
+    los.js          line of sight and concealment on hexes
     spotting.js     fog of war and contact tracking
-    orders.js       order types and validation
-    rng.js          seeded RNG (mulberry32 or similar)
-  /ai         enemy behavior, reads state and returns orders
+    combat.js       dice, target numbers, suppression, casualties, assault
+    odds.js         exact odds for the preview
+    rng.js          seeded RNG (mulberry32)
+  /ai         enemy behavior, reads state and returns actions
   /render     canvas drawing only
-  /ui         input, order planning, preview line, AAR replay
+  /ui         input, action planning, odds preview, AAR replay
 /data
-  balance.json      all tunable numbers (see section 5)
-  weapons.json
+  balance.json      all tunable numbers (terrain table, dice modifiers)
   /maps             one JSON per mission
 /tests
 ```
 
 Rules for the simulation:
 
-- **Deterministic.** Same state + same orders + same seed = same result, always. Tests depend on this.
-- `step(state, orders, rng)` returns the new state and a list of **events** (shot fired, suppressed, hit, spotted, killed, moved). The renderer and the after-action replay both consume the events. Never let rendering logic decide outcomes.
+- **Deterministic.** Same state + same actions + same seed = same result, always. Tests depend on this.
+- `applyAction(state, action, rng)` returns the new state and a list of **events** (activated, moved, fired, dice rolled, suppressed, casualty, spotted, assault, turn ended). The renderer, the log and the after-action replay all consume the events. Never let rendering logic decide outcomes.
 - **No magic numbers in code.** Every tunable lives in `data/balance.json`.
-- A turn is 10 seconds, simulated in fixed ticks of 0.5 seconds (20 ticks). Tick length is configurable.
 
 ---
 
 ## 4. Map model
 
-- Square tile grid. Default 1 tile = 2 m. Default map 80 x 80 tiles. Both configurable.
-- Each tile has: `terrain` (open, road, grass, scrub, forest, rubble, water), `height` (0 none, 1 low, 2 high), `cover` (none, light, heavy, hard), and `concealment` (none, partial, full).
-- **Cover and concealment are different.** Cover stops bullets. Concealment only blocks sight. A bush hides you but does not protect you. A wall protects you and may or may not hide you.
-- Buildings: walls are high, hard cover with door and window tiles that allow passage or fire.
-
-### Directional cover (the core mechanic)
-
-Do not store a facing on cover objects. Derive protection from neighbors:
-
-- A soldier's protection against fire arriving from direction `d` (8 directions) is the best cover value among the tile adjacent in direction `d`, and the soldier's own tile if it carries cover.
-- So a soldier behind a wall is protected from the wall side and **fully exposed from the other sides**. Flanking means firing from outside the protected arc.
-- Stance scales cover: prone gets the most benefit from low cover, standing gets almost none.
+- Pointy-top hex grid, offset rows ("odd-r": odd rows are shifted half a hex right). **1 hex = 50 m.** Maps are hand-built JSON, one character per hex.
+- Each hex has one terrain type. The terrain table in `balance.json` gives each type: movement (normal, stops fast move, impassable), cover (a casualty roll number), concealment (hides units in it), and whether it blocks line of sight through it.
+- Terrain types: open, road, scrub, woods, rubble, building, trench (dug-in fighting positions), water.
+- **Cover and concealment are different.** Cover makes casualties less likely. Concealment hides a unit and, for woods and buildings, blocks sight through the hex.
+- Stacking: one fireteam per hex.
 
 ---
 
 ## 5. Rules (first pass, all numbers tunable in `balance.json`)
 
-### Soldier state
+### Units
 
-`pos`, `stance` (stand, crouch, prone), `suppression` (0 to 100), `ammo`, `weapon`, `status` (active, shaken, pinned, wounded, down, dead), `team` (ALPHA, BRAVO, etc.), `hp`.
+A counter is one **fireteam**: side, team name (ALPHA, BRAVO...), soldiers (default 4: TL, AR, GRN, RFL), status (ok, shaken, pinned, eliminated), activated this turn, exposed (fast moved). Casualties remove soldiers; the AR is lost last. A team with no soldiers left is eliminated.
 
-### Suppression
+### Turn and activations
 
-- Every shot that passes near a soldier adds suppression, whether or not it hits. Automatic fire adds more than single shots. Near misses scale with proximity and weapon class.
-- Suppression decays slowly each second, faster when prone and in cover, slower when the soldier is being fired at.
-- Thresholds (defaults): **shaken** at 40 (accuracy penalty), **pinned** at 70 (cannot move, only poor return fire, will not expose themselves), at 100 the soldier is broken and may retreat or surrender.
-- Ammo is limited. Suppression is a resource the player spends, so a base of fire must be planned, not spammed.
+- Each turn, sides alternate activating one fireteam that has not yet acted, starting with BLUFOR. If one side has no fireteams left to activate, the other side activates its remaining ones in a row. When all have acted, the turn ends.
+- At the start of each turn, suppressed teams roll to recover.
+- An activation is one action: **Move**, **Fast move**, **Fire**, or pass.
 
-### Hit chance
+### Actions
 
-```
-hit = base(weapon, range)
-    x stance_modifier
-    x movement_modifier        (moving and running hurts accuracy)
-    x cover_modifier           (directional, see section 4)
-    x suppression_modifier     (shaken and pinned shooters miss more)
-    x optic_modifier
-```
+| Action | Effect |
+|---|---|
+| Move | 1 hex. The careful way: the team keeps its normal profile. |
+| Fast move | Up to 2 hexes, but entering rough terrain ends it. The team is **exposed** until its next activation: easier to spot and to hit. |
+| Fire | One d6 per soldier (AR rolls two) at a hex in range and line of sight. On a spotted enemy it is aimed fire; on a hex with no spotted enemy it is suppressive fire at worse odds. |
+| Assault | Moving or firing into an **adjacent enemy hex** starts an assault (close combat). |
 
-Clamp to a sensible range. Every factor is exposed in the preview and the replay.
+### Fire
+
+- Target number (TN) on a d6, default 4+, modified by range, the target's cover, the target being exposed, the shooter being shaken or pinned, and firing at a hex with no spotted enemy. Clamped to 2+ .. 6+.
+- Each die at or above the TN is a hit. 1 hit: the target is shaken (already shaken: pinned). 2 or more hits: pinned.
+- Each hit gets a casualty roll against the target's cover (for example 4+ in the open, 6 in a trench). Each success removes a soldier.
+- Pinned teams cannot move and fire at worse odds. Shaken teams fire at slightly worse odds.
+
+### Assault
+
+Close combat when a team moves or fires into an adjacent enemy hex. Both sides roll a die per soldier at the same time; each success removes an enemy soldier. The attacker's TN depends on the defender's state (pinned easiest) and the defender's TN on the defender being dug in. If the defender is wiped out or ends with fewer soldiers than the attacker, it is eliminated and the attacker takes the hex; otherwise the attacker falls back pinned. Against an unsuppressed team in cover, an assault should be costly.
 
 ### Vision and fog of war
 
-- Line of sight uses a tile raycast (Bresenham or supercover) against `height` and `concealment`.
-- Enemy contacts have three levels: **unseen**, **suspected** (muzzle flash or last known position, shown as an uncertain marker), **spotted** (confirmed, can be targeted precisely).
-- Firing reveals the shooter (muzzle flash), which is how a dug-in enemy gets found. Suppressive fire can target a suspected position, at lower accuracy.
-- Spotting chance depends on range, stance, concealment, and whether the target fired this turn.
+- Line of sight runs from hex center to hex center; woods and buildings in between block it. The target's own hex never blocks.
+- Enemy contacts have three levels: **unseen**, **suspected** (last known position, or a hex that fired), **spotted** (confirmed, shown on the map).
+- A unit in line of sight is spotted if it is in the open, adjacent, exposed, or has fired this turn. Firing reveals the shooter, which is how a dug-in enemy gets found.
 
-### Orders (given per team, executed per soldier)
+### Odds preview (important)
 
-| Order | Effect |
-|---|---|
-| Move | Path to a tile. Speeds: walk, run, crawl (affects noise, accuracy, exposure) |
-| Suppress | Sustained fire on a target tile or contact. Spends ammo, raises target suppression |
-| Fire | Aimed fire on a spotted contact |
-| Overwatch | Hold position, engage anything that appears in an arc |
-| Assault | Move and close with a target. Only effective against suppressed targets |
-| Grenade | Throw to a tile within range (40mm or hand), area suppression and damage |
-| Stance | Change stance |
+Before committing, the UI tells the player what will happen, for example:
 
-The player can set a separate order for each team (for example ALPHA suppresses, BRAVO moves to a flanking tile).
-
-### Finish
-
-A close assault or grenade has a high kill chance only if the target is pinned or exposed from the attacker's direction. Against an unsuppressed soldier in cover, an assault should be costly.
-
-### Order preview (important)
-
-Before pressing GO, a status line for each order tells the player what will actually happen, for example:
-
-- "ALPHA has no line of sight to target. Suppression will hit a suspected position at reduced accuracy."
-- "BRAVO route crosses open ground in view of the enemy for about 6 tiles."
-- "ALPHA will run out of ammo after about 7 seconds of fire."
+- "ALPHA fires on the trench at 6,3: 5 dice, hit on 6. 60% chance of at least one hit, 18% to pin. Expected casualties 0.2."
+- "No spotted enemy at 6,3: suppressive fire, hit on 6+ (+2 for firing blind)."
+- "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next activation."
 
 ### After-action replay
 
-Every turn can be replayed with an explanation layer. When a shot misses or an order fails, the replay shows the reason in plain words (suppressed, out of ammo, target in heavy cover from that direction, no LOS). This is what makes the game useful for drill practice.
+Every action can be replayed with its dice and an explanation (target number and modifiers, which dice hit, casualty rolls). This is what makes the game useful for drill practice.
 
 ---
 
 ## 6. Enemy AI
 
-Scripted state machine per enemy team. The AI uses the **same visibility and rules as the player**, no cheating.
+Scripted behavior per enemy fireteam, using the **same visibility and rules as the player**, no cheating.
 
-States: `HOLD` (dug in, return fire), `ENGAGED` (taking fire, return fire on known contacts), `SUPPRESSED` (go to ground, minimal fire), `REPOSITION` (move to better cover), `COUNTER_FLANK` (try to reach the player's exposed side if enough unsuppressed soldiers), `RETREAT`.
+States: `HOLD` (dug in, fire on spotted targets), `ENGAGED` (taking fire, return fire on known contacts), `SUPPRESSED` (pinned: wait to recover), `REPOSITION` (move to better cover), `COUNTER_FLANK` (move against the player's maneuver element if it has enough unsuppressed soldiers), `RETREAT`.
 
-Design goal: the AI reacts sensibly to suppression and sometimes tries to flank, so the same plan does not win every time. Difficulty levels change reaction speed, accuracy, and aggression, not information.
+Design goal: the AI reacts sensibly to suppression and sometimes counterattacks, so the same plan does not win every time. Difficulty levels change aggression and dice modifiers, not information.
 
 ---
 
 ## 7. Milestones
 
-Work one milestone at a time. Do not start the next until the current one passes its acceptance check.
+Work one milestone at a time. Do not start the next until the current one passes its acceptance check. Milestone 1 (scaffold) carries over from the first version.
 
-1. **Scaffold.** Project layout, static server script, empty canvas, seeded RNG, test runner working.
-2. **Map and movement.** Load a map from JSON, render tiles, select a team, plan a move path, execute a turn with simultaneous movement. *Accept:* deterministic replay of the same orders.
-3. **Line of sight and fog.** Raycast LOS, concealment, contact levels (unseen, suspected, spotted). *Accept:* unit tests for LOS across walls, bushes, and height.
-4. **Combat, suppression, directional cover.** Hit chance, suppression thresholds, cover derived from neighbors. *Accept:* unit tests showing a soldier behind a wall is hard to hit from the front and easy to hit from the flank.
-5. **Orders and UI.** All order types, two-team planning, preview line. *Accept:* the preview matches what actually happens in the sim.
-6. **Enemy AI.** State machine from section 6. *Accept:* AI goes to ground when suppressed and sometimes counter-flanks.
-7. **First mission and balance test.** One map: a BLUFOR squad vs. a dug-in OPFOR fireteam. *Accept (automated):* over 200 seeded runs, a scripted frontal assault wins under 25 percent and a scripted fix-and-flank plan wins over 70 percent. Adjust `balance.json` until this holds.
-8. **After-action replay** with explanations.
-9. **Content.** More missions, terrain types, difficulty levels, weapons. Only after the core loop is proven fun.
+1. **Scaffold.** Done.
+2. **Hex map, counters, activations, movement.** Hex map from JSON, fireteam counters, alternating activations, Move and Fast move, pass. *Accept:* activation order rules tested; deterministic replay of an action list.
+3. **Line of sight and fog on hexes.** *Accept:* unit tests for LOS through woods and buildings, and the spotting rules.
+4. **Fire with dice, suppression, casualties, recovery.** *Accept:* tests for target numbers and modifiers; outcome frequencies over many seeded rolls match the exact odds; a team in a trench is much harder to kill than one in the open.
+5. **Assault and the odds preview.** *Accept:* preview odds equal the exact odds the sim rolls against.
+6. **Enemy AI.** *Accept:* AI fires from its positions, waits when pinned, and sometimes counterattacks.
+7. **First mission and balance test.** BLUFOR squad vs. dug-in OPFOR. *Accept (automated):* over 200 seeded runs, a scripted frontal assault wins under 25 percent and a scripted fix-and-flank plan wins over 70 percent. Adjust `balance.json` until this holds.
+8. **After-action replay** with dice and explanations.
+9. **Content.** More missions, terrain, difficulty levels. Only after the core loop is proven fun.
 
 Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, campaign, multiplayer.
 
@@ -179,18 +160,13 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 - When a rule is ambiguous, pick the simplest option, write it down in `docs/decisions.md`, and continue. Do not silently invent complex systems.
 - Do not add dependencies, frameworks, or a build step without asking.
 - When balance feels off, change `balance.json`, not code, and re-run the milestone 7 balance test.
-- Keep UI text plain and in the vocabulary of infantry tactics (fireteam, base of fire, contact, overwatch, bounding, suppress, flank). No filler, no flowery language.
+- Keep UI text plain and in the vocabulary of infantry tactics (fireteam, base of fire, contact, bounding, suppress, flank, assault). No filler, no flowery language.
 - After each milestone, summarize what works, what is stubbed, and what you would test next.
 
 ---
 
-## 9. Open questions (ask the user before assuming)
+## 9. Open questions
 
-**Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; 2 m tiles, 80 x 80; anonymous soldiers by role; hand-built maps only; distribution decided later.
+**Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; anonymous soldiers by role; hand-built maps only; distribution decided later.
 
-1. Primary purpose: standalone game, or drill-rehearsal tool for the Reforger community, or both? (Affects how much the game explains itself.)
-2. Desktop only, or phone-first like Contrail Tactics?
-3. Tile scale and map size: is 2 m tiles and 80 x 80 right, or should maps be bigger?
-4. Should the player command named soldiers with persistent stats, or anonymous riflemen?
-5. Real terrain from open map data later (as Contrail Tactics does for Iceland), or hand-built maps only?
-6. License and distribution: itch.io HTML5 build, or hosted on the community site?
+**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; drop directional cover.

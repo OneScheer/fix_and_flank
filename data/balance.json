@@ -1,175 +1,48 @@
 {
-  "turn": {
-    "durationSec": 10,
-    "tickSec": 0.5
-  },
   "map": {
-    "tileMeters": 2,
-    "defaultWidth": 80,
-    "defaultHeight": 80
+    "hexMeters": 50
   },
-  "soldier": {
-    "hp": 100,
-    "startStance": "crouch"
+  "turn": {
+    "initiative": [
+      "BLUFOR",
+      "OPFOR"
+    ]
+  },
+  "unit": {
+    "roles": [
+      "TL",
+      "AR",
+      "GRN",
+      "RFL"
+    ],
+    "casualtyOrder": [
+      "RFL",
+      "GRN",
+      "TL",
+      "AR"
+    ],
+    "leaderRoles": [
+      "SL"
+    ]
   },
   "movement": {
-    "speedMps": {
-      "walk": 1.5,
-      "run": 4.0,
-      "crawl": 0.4
-    },
-    "stanceForSpeed": {
-      "walk": "crouch",
-      "run": "stand",
-      "crawl": "prone"
-    },
-    "terrainCost": {
-      "open": 1,
-      "road": 1,
-      "grass": 1,
-      "scrub": 1.4,
-      "forest": 1.8,
-      "rubble": 2,
-      "water": null
-    },
-    "lowObstacleCost": 2,
-    "formationSearchRadius": 4,
-    "formation": {
-      "spacingTiles": 2,
-      "wedgeSlots": [[0, 0], [-1, 1], [1, 1], [2, 2], [-2, 2], [3, 3], [-3, 3], [0, 2]]
-    },
-    "maxWaypoints": 8
+    "fastMoveHexes": 2
   },
-  "vision": {
-    "eyeHeightM": {
-      "stand": 1.6,
-      "crouch": 1.1,
-      "prone": 0.3
-    },
-    "obstacleHeightM": {
-      "0": 0,
-      "1": 1.0,
-      "2": 3.0
-    },
-    "partialExposureMarginM": 0.3,
-    "concealmentDensity": {
-      "none": 0,
-      "partial": 0.15,
-      "full": 0.35
-    },
-    "blockingConcealment": 1.0,
-    "maxRangeM": 300
+  "status": {
+    "recoverOn": 5
   },
-  "spotting": {
-    "basePerSec": 0.5,
-    "halfChanceRangeM": 40,
-    "autoSpotRangeM": 6,
-    "stanceFactor": {
-      "stand": 1.0,
-      "crouch": 0.4,
-      "prone": 0.2
-    },
-    "targetConcealmentFactor": {
-      "none": 1.0,
-      "partial": 0.5,
-      "full": 0.25
-    },
-    "partialExposureFactor": 0.15,
-    "movingFactor": 2.0,
-    "firedFactor": 4.0,
-    "firedWindowSec": 10,
-    "contactMemorySec": 60
+  "rally": {
+    "rangeHexes": 1,
+    "succeedOn": 3
   },
-  "cover": {
-    "protection": {
-      "none": 0,
-      "light": 0.25,
-      "heavy": 0.5,
-      "hard": 0.8
-    },
-    "lowCoverStance": {
-      "stand": 0.3,
-      "crouch": 0.8,
-      "prone": 1.0
-    }
-  },
-  "combat": {
-    "minHit": 0.01,
-    "maxHit": 0.95,
-    "shooterStance": {
-      "stand": 0.85,
-      "crouch": 1.0,
-      "prone": 1.1
-    },
-    "targetStance": {
-      "stand": 1.0,
-      "crouch": 0.75,
-      "prone": 0.5
-    },
-    "movement": {
-      "still": 1.0,
-      "walk": 0.5,
-      "run": 0.15,
-      "crawl": 0
-    },
-    "suppressionAccuracy": {
-      "active": 1.0,
-      "shaken": 0.6,
-      "pinned": 0.25
-    },
-    "woundedAccuracy": 0.7,
-    "pinnedFireRate": 0.5,
-    "muzzleFlashRangeM": 250
-  },
-  "suppression": {
-    "nearMissRadiusTiles": 2,
-    "decayPerSec": 4,
-    "proneDecayFactor": 1.5,
-    "coverDecayFactor": 1.5,
-    "underFireDecayFactor": 0.25,
-    "underFireSec": 2,
-    "shaken": 40,
-    "pinned": 70,
-    "max": 100
-  },
-  "health": {
-    "downAtHp": 25
-  },
-  "orders": {
-    "fireMode": {
-      "aimed": 1.0,
-      "overwatch": 1.2,
-      "suppress": 0.5,
-      "suppressUnseen": 0.25
-    },
-    "suppress": {
-      "rateFactor": 0.5,
-      "hitRadiusTiles": 1,
-      "aimStance": "crouch"
-    },
-    "overwatch": {
-      "arcDeg": 90
-    },
-    "assault": {
-      "speed": "run",
-      "rangeTiles": 2.5,
-      "base": 0.8,
-      "statusFactor": {
-        "active": 0.1,
-        "wounded": 0.1,
-        "shaken": 0.5,
-        "pinned": 1.0
-      },
-      "damage": 100,
-      "intervalSec": 1.0
-    }
-  },
-  "grenade": {
-    "throwSec": 1.0,
-    "hitByDistanceTiles": [[1, 0.9], [2, 0.5], [3, 0.2]],
-    "damage": 60,
-    "suppression": 70,
-    "suppressionRadiusTiles": 4,
-    "dangerRadiusM": 6
+  "terrain": {
+    "open": { "move": "normal", "casualtyOn": 4, "concealing": false, "blocksLos": false },
+    "road": { "move": "normal", "casualtyOn": 4, "concealing": false, "blocksLos": false },
+    "scrub": { "move": "rough", "casualtyOn": 5, "concealing": true, "blocksLos": false },
+    "woods": { "move": "rough", "casualtyOn": 5, "concealing": true, "blocksLos": true },
+    "rubble": { "move": "rough", "casualtyOn": 6, "concealing": true, "blocksLos": false },
+    "building": { "move": "rough", "casualtyOn": 6, "concealing": true, "blocksLos": true },
+    "trench": { "move": "normal", "casualtyOn": 6, "concealing": true, "blocksLos": false },
+    "water": { "move": "impassable", "casualtyOn": 4, "concealing": false, "blocksLos": false }
   }
 }

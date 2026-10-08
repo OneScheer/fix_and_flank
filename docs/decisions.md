@@ -82,3 +82,27 @@ Answers to open questions and rulings on ambiguous rules. Newest at the bottom.
 - **Route exposure** = tiles of the leader's route with no concealment where a known contact has clear, not partial, line of sight to a soldier in the move's stance.
 - **Event log times** use the sim clock: an event in tick k is shown at (k + 1) x 0.5 s, matching the preview's times. Orders show at 0.0 s.
 - **Balance is not tuned yet (Milestone 7).** Early runs: a scripted frontal assault on the training map never wins; a crude scripted fix-and-flank does not win yet either, though it costs OPFOR far more. Two likely causes to tune: OPFOR rifle fire at 70-100 m is very lethal against crouched soldiers in the open, and one suppress point covers only about 2 tiles while a dug-in fireteam is spread over 10.
+
+---
+
+# Hex redesign (2026-10-08)
+
+The user found the real-time WEGO version did not work as intended and asked for: traditional hexes, dice for hit resolution, orders reduced to move / fire / fast move (fire on an unobserved hex is suppression, firing at or moving into an adjacent hex is an assault), and 50 m hexes, with Take That Hill as inspiration. Everything above this line describes the first version, kept for history; it is in git up to `acfdbe8`.
+
+Answers to the follow-up questions:
+
+- **Turns:** alternating activations, one fireteam at a time.
+- **Counters:** a fireteam of 4 (TL, AR, GRN, RFL). BLUFOR squad = ALPHA + BRAVO.
+- **Dice:** one d6 per firing soldier against a target number; odds shown before, rolls shown after.
+- **Kept:** fog of war, suppression states (shaken, pinned), the odds preview. **Dropped:** directional cover. Flanking now pays through line of sight and concealment and through suppress-then-assault. If fix and flank is weak in testing, a simple fix is trenches that only give cover against fire from the front.
+- takethathill.com could not be fetched from the cloud environment (network policy), so its rules were not copied; the design follows the user's description.
+
+## Hex milestone 2: map, counters, activations, movement
+
+- **Grid:** pointy-top hexes, "odd-r" offset coordinates `{col, row}` in maps and state (odd rows shifted half a hex right), converted to cube coordinates for distance, neighbors and lines.
+- **Terrain table** in `balance.json` (`terrain`): `move` is `normal`, `rough` (a fast move must stop on entering) or `impassable`.
+- **Stacking:** one fireteam per hex, any side. Moving into an enemy hex will be an assault (milestone 5); until then it is rejected.
+- **Initiative:** BLUFOR activates first every turn. Passing counts as that team's activation.
+- **Fast move:** a path of up to `movement.fastMoveHexes` (2) adjacent hexes; entering rough terrain ends it, so a rough hex can only be the last one. The team is exposed until its own next activation (or the end of the next turn's activation of it).
+- **Pinned teams** cannot move; they can still fire (milestone 4) or pass.
+- **OPFOR** passes on all its activations until fire (milestone 4) and the AI (milestone 6) exist.
