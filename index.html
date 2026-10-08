@@ -28,9 +28,11 @@
     .row button { flex: 1; }
     #units { display: flex; flex-direction: column; gap: 6px; }
     .unit { text-align: left; }
+    .unit .order { color: var(--dim); font-size: 12px; margin-top: 2px; }
+    .unit .order.bad { color: #ff8a65; }
     #active { color: var(--text); }
     #preview { min-height: 3em; }
-    #confirm { background: var(--go); border-color: #d9674f; color: #fff; font-weight: bold; letter-spacing: 0.1em; padding: 10px; }
+    #commit { background: var(--go); border-color: #d9674f; color: #fff; font-weight: bold; letter-spacing: 0.1em; padding: 10px; }
     #message { color: #e0b060; min-height: 1.4em; }
     #log { margin: 0; white-space: pre-wrap; color: var(--dim); max-height: 260px; overflow-y: auto; font-size: 12px; }
     .keys { color: var(--dim); font-size: 12px; }
@@ -48,11 +50,11 @@
     <canvas id="board"></canvas>
     <aside>
       <section>
-        <h2>Activation</h2>
+        <h2>Orders</h2>
         <div id="active"></div>
       </section>
       <section>
-        <h2>Your units</h2>
+        <h2>Your units and their orders</h2>
         <div id="units"></div>
       </section>
       <section>
@@ -64,22 +66,22 @@
         </div>
       </section>
       <section>
-        <h2>Preview</h2>
         <div id="preview"></div>
         <div id="message"></div>
       </section>
       <section class="row">
-        <button id="pass" title="P">Pass</button>
-        <button id="confirm" title="Space">CONFIRM</button>
+        <button id="hold" title="H">Hold (no order)</button>
+        <button id="clear">Clear all</button>
       </section>
+      <button id="commit" title="Space">COMMIT ORDERS</button>
       <section>
         <h2>Log</h2>
         <pre id="log"></pre>
       </section>
       <section class="keys">
-        Click a unit to select it (click again to switch between a team and the SL in the same hex).
-        Click a highlighted hex to plan, click it again or press Space to confirm. Esc cancels.
-        M move, R fast move, L rally, P pass, Tab next unit. Home fits the map.
+        Click a unit to select it (click again to switch between a team and the SL in the same hex), then click a hex to give its order.
+        A new order replaces the old one. Orders run in the order given. Units without an order hold.
+        M move, R fast move, L rally, H hold, Tab next unit, Space commit. Home fits the map.
         Fire and assault come in the next milestones.
       </section>
     </aside>

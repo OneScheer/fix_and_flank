@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chooseAction } from '../src/ai/basic.js';
+import { chooseOrders } from '../src/ai/basic.js';
 import { applyAction } from '../src/sim/actions.js';
 import { createRng } from '../src/sim/rng.js';
 import { eventText, previewAction } from '../src/ui/describe.js';
@@ -30,8 +30,6 @@ test('log lines report the dice', () => {
   assert.match(eventText(r.state, e), new RegExp(`rallies ALPHA: rolled ${e.roll} \\(needed 3\\+\\)`));
 });
 
-test('the placeholder OPFOR passes with its next team', () => {
-  let s = squad();
-  s = applyAction(s, { type: 'pass', unit: 0 }, createRng(1)).state;
-  assert.deepEqual(chooseAction(s, 'OPFOR'), { type: 'pass', unit: 2 });
+test('the placeholder OPFOR gives no orders: all its units hold', () => {
+  assert.deepEqual(chooseOrders(squad(), 'OPFOR'), []);
 });

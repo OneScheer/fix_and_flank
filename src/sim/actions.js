@@ -1,4 +1,4 @@
-// Actions and the step function. One action is one fireteam's activation.
+// Actions and the step function. One action is one unit's order for the turn.
 //
 // { type: 'move', unit, to: {col, row} }           1 hex
 // { type: 'fastMove', unit, path: [{col, row}, ...] }  up to fastMoveHexes;
@@ -13,10 +13,10 @@
 // plus the squad leader. At the start of each turn every suppressed or
 // pinned unit rolls to recover one step (status.recoverOn).
 //
-// Sides alternate: after an activation the other side acts if it has a team
-// left that has not acted; otherwise the same side goes again. When nobody
-// is left, the turn ends and a new one starts with the side that has the
-// initiative.
+// Each turn every side in initiative order gives orders to all its units and
+// commits them (see orders.js): the side keeps acting until all its units
+// have acted, then the next side does. When nobody is left, the turn ends
+// and a new one starts with the side that has the initiative.
 
 import { rollD6 } from './dice.js';
 import { adjacent, distance, key, neighbors } from './hex.js';
@@ -127,11 +127,11 @@ function recoveryRolls(state, rng, events) {
 
 // After an activation: who acts next, or end the turn.
 function advance(state, rng, events) {
-  const other = state.balance.turn.initiative.find((s) => s !== state.activeSide);
   const left = sidesWithActivations(state);
-  if (left.includes(other)) state.activeSide = other;
-  else if (left.includes(state.activeSide)) {
-    // same side again
+  if (left.includes(state.activeSide)) return; // the side is still giving orders
+  if (left.length) {
+    state.activeSide = left[0];
+    events.push({ type: 'side_start', turn: state.turn, side: state.activeSide });
   } else {
     events.push({ type: 'turn_end', turn: state.turn });
     state.turn += 1;

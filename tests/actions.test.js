@@ -28,14 +28,14 @@ test('BLUFOR has the initiative: it acts first in turn 1', () => {
   assert.equal(s.activeSide, 'BLUFOR');
 });
 
-test('sides alternate; when one runs out, the other activates the rest in a row; then a new turn', () => {
+test('each side orders all its units, then the next side; then a new turn', () => {
   let s = threeVsOne();
   const order = [];
-  for (const id of [0, 3, 1, 2]) {
+  for (const id of [0, 1, 2, 3]) {
     order.push(s.activeSide);
     s = act(s, pass(id)).state;
   }
-  assert.deepEqual(order, ['BLUFOR', 'OPFOR', 'BLUFOR', 'BLUFOR']);
+  assert.deepEqual(order, ['BLUFOR', 'BLUFOR', 'BLUFOR', 'OPFOR']);
   assert.equal(s.turn, 2);
   assert.equal(s.activeSide, 'BLUFOR');
   assert.ok(s.units.every((u) => !u.activated));
@@ -55,16 +55,16 @@ test('out of turn and second activations are rejected and do not use up an activ
   assert.equal(r.events[0].type, 'rejected');
   assert.match(r.events[0].reason, /BLUFOR's activation/);
   assert.equal(r.state, s, 'state unchanged');
-  r = act(act(s, pass(0)).state, pass(3));
-  r = act(r.state, pass(0));
+  r = act(act(s, pass(0)).state, pass(0));
   assert.match(r.events[0].reason, /already acted/);
 });
 
 test('eliminated teams are skipped', () => {
-  const s = threeVsOne();
+  let s = threeVsOne();
   s.units[3].status = 'eliminated';
-  const r = act(s, pass(0));
-  assert.equal(r.state.activeSide, 'BLUFOR', 'OPFOR has nobody to activate');
+  for (const id of [0, 1]) s = act(s, pass(id)).state;
+  const r = act(s, pass(2));
+  assert.equal(r.state.turn, 2, 'OPFOR has nobody to order: straight to the next turn');
 });
 
 // ---- move ----
@@ -131,13 +131,13 @@ test('replaying the same action list gives the same states and events', () => {
   // Training map ids: BLUFOR ALPHA 0, BRAVO 1, OPFOR ALPHA 2, BLUFOR SL 3.
   const plan = [
     { type: 'fastMove', unit: 0, path: [H(4, 10), H(4, 9)] },
-    pass(2),
     move(1, 6, 10),
     move(3, 5, 10),
-    { type: 'fastMove', unit: 0, path: [H(4, 8), H(4, 7)] },
     pass(2),
+    { type: 'fastMove', unit: 0, path: [H(4, 8), H(4, 7)] },
     move(1, 6, 9),
     { type: 'fastMove', unit: 3, path: [H(5, 9), H(5, 8)] },
+    pass(2),
   ];
   const play = (seed) => {
     let s = trainingState(seed);
@@ -240,7 +240,7 @@ test('dice and rally replay identically from the same seed', () => {
     let s = squad();
     s.units[1].status = 'pinned';
     const log = [];
-    for (const a of [{ type: 'rally', unit: 0, target: 1 }, pass(3), pass(1), pass(2)]) {
+    for (const a of [{ type: 'rally', unit: 0, target: 1 }, pass(1), pass(2), pass(3)]) {
       const r = act(s, a);
       s = r.state;
       log.push(r.events);

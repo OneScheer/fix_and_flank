@@ -1,9 +1,9 @@
 // Placeholder enemy behavior until fire (milestone 4) and the AI (milestone 6):
-// every OPFOR activation is a pass. Reads state, returns an action.
+// OPFOR gives no orders, so every unit holds. Reads state, returns the
+// side's list of orders for commitOrders().
 
-import { canActivate } from '../sim/state.js';
-
-export function chooseAction(state, side) {
-  const unit = state.units.find((u) => u.side === side && canActivate(state, u));
-  return unit ? { type: 'pass', unit: unit.id } : null;
+export function chooseOrders(state, side) {
+  void state;
+  void side;
+  return [];
 }

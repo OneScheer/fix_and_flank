@@ -14,7 +14,7 @@ The first version (2 m tiles, real-time WEGO with 10 second turns, percentage hi
 
 1. **Fix and flank is the optimal strategy.** If a frontal assault is ever the best plan against an entrenched enemy, the balance is wrong.
 2. **Dice, but never hidden dice.** Combat is resolved with d6 rolls. Before committing, the player sees the target number, the dice and the odds. After, the player sees the actual rolls and why.
-3. **Turn-based, alternating activations.** Sides take turns activating one fireteam at a time until every fireteam has acted; then a new turn starts. Nothing moves while the player decides.
+3. **Turn-based, orders for the whole side.** Each turn the player gives every unit an order and commits them all; they are carried out in the order given. Then OPFOR does the same, and a new turn starts. Nothing moves while the player decides.
 4. **Small and readable.** A BLUFOR squad of two fireteams and a squad leader against a few OPFOR fireteams. Each counter is a fireteam (or the SL). Three orders: Move, Fast move, Fire; the SL can also Rally.
 5. **Real tactics, abstract presentation.** Correct doctrine and terminology, simple visuals (NATO-style counters, flat hexes). No made-up superweapons.
 
@@ -41,6 +41,7 @@ The simulation must be completely separate from rendering and UI.
     map.js          map loading, terrain lookups
     state.js        game state shape
     actions.js      action validation and resolution (the step function)
+    orders.js       a side's orders: commit, and planning projections
     los.js          line of sight and concealment on hexes
     spotting.js     fog of war and contact tracking
     combat.js       dice, target numbers, suppression, casualties, assault
@@ -58,7 +59,7 @@ The simulation must be completely separate from rendering and UI.
 Rules for the simulation:
 
 - **Deterministic.** Same state + same actions + same seed = same result, always. Tests depend on this.
-- `applyAction(state, action, rng)` returns the new state and a list of **events** (activated, moved, fired, dice rolled, suppressed, casualty, spotted, assault, turn ended). The renderer, the log and the after-action replay all consume the events. Never let rendering logic decide outcomes.
+- `applyAction(state, action, rng)` resolves one unit's order and `commitOrders(state, actions, rng)` a whole side's; both return the new state and a list of **events** (activated, moved, fired, dice rolled, suppressed, casualty, spotted, assault, turn ended). The renderer, the log and the after-action replay all consume the events. Never let rendering logic decide outcomes.
 - **No magic numbers in code.** Every tunable lives in `data/balance.json`.
 
 ---
@@ -91,9 +92,10 @@ Status: **ok**, **suppressed** (cannot move, can still fire), **pinned** (cannot
 
 ### Turn and activations
 
-- Each turn, sides alternate activating one fireteam that has not yet acted, starting with BLUFOR. If one side has no fireteams left to activate, the other side activates its remaining ones in a row. When all have acted, the turn ends.
+- Each turn, BLUFOR (the initiative side) gives an order to every unit and commits them; the orders are carried out one after another in the order they were given, each rolling its own dice. A unit without an order holds. An order that has become impossible by the time it runs is skipped with the reason, and that unit holds. Then OPFOR gives and commits its orders, and the turn ends.
+- While planning, each order is checked against where the earlier orders will have put things, so a team can move into a hex another team leaves earlier in the plan. Dice results are not known while planning.
 - At the start of each turn, every suppressed or pinned unit rolls a d6 and improves one step on 5+ (the SL's rally is the reliable way).
-- An activation is one action: **Move**, **Fast move**, **Fire**, **Rally** (SL only), or pass.
+- Each unit gets one order per turn: **Move**, **Fast move**, **Fire**, **Rally** (SL only), or hold.
 
 ### Actions
 
@@ -152,7 +154,7 @@ Design goal: the AI reacts sensibly to suppression and sometimes counterattacks,
 Work one milestone at a time. Do not start the next until the current one passes its acceptance check. Milestone 1 (scaffold) carries over from the first version.
 
 1. **Scaffold.** Done.
-2. **Hex map, counters, activations, movement.** Hex map from JSON, fireteam and SL counters, alternating activations, Move and Fast move, pass, Rally, recovery rolls. *Accept:* activation order rules tested; deterministic replay of an action list.
+2. **Hex map, counters, orders, movement.** Hex map from JSON, fireteam and SL counters, orders for the whole side committed together, Move and Fast move, hold, Rally, recovery rolls. *Accept:* turn order rules tested; deterministic replay of an action list.
 3. **Line of sight and fog on hexes.** *Accept:* unit tests for LOS through woods and buildings, and the spotting rules.
 4. **Fire with dice, suppression, casualties, recovery.** *Accept:* tests for target numbers and modifiers; outcome frequencies over many seeded rolls match the exact odds; a team in a trench is much harder to kill than one in the open.
 5. **Assault and the odds preview.** *Accept:* preview odds equal the exact odds the sim rolls against.
@@ -181,4 +183,4 @@ Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, c
 
 **Resolved 2026-09-30, see `docs/decisions.md`:** both game and drill tool; desktop first; anonymous soldiers by role; hand-built maps only; distribution decided later.
 
-**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; directional cover dropped at first, then restored the same day as hexside cover (walls, hedges, parapets). Also added the same day: moved units cannot fire that turn; squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire).
+**Resolved 2026-10-08 (hex redesign):** 50 m hexes; alternating activations at first, then (same day) orders for the whole side committed together; fireteam counters of 4; d6 per shooter with odds shown; keep fog of war, suppression states and the odds preview; directional cover dropped at first, then restored the same day as hexside cover (walls, hedges, parapets). Also added the same day: moved units cannot fire that turn; squad leader counter with Rally; suppressed (no move) and pinned (no move, no fire).

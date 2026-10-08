@@ -33,7 +33,7 @@ export function previewAction(state, action) {
       return `${u.team} rallies ${t.team} (${t.status}): needs ${need}+ on a d6, ${inSix(need)} (${pct(chanceAtLeast(need))}). Success: ${t.team} becomes ${betterStatus(t.status)}.`;
     }
     case 'pass':
-      return `${u.team} holds and passes this activation.`;
+      return `${u.team} holds.`;
     default:
       return '';
   }
@@ -55,6 +55,8 @@ export function eventText(state, e) {
       return `${unitName(u)} rolls ${e.roll} to recover (needs ${e.need}+): ${e.success ? `now ${e.to}` : `still ${e.from}`}.`;
     case 'turn_end':
       return `End of turn ${e.turn}.`;
+    case 'side_start':
+      return `${e.side} gives its orders.`;
     case 'turn_start':
       return `Turn ${e.turn}. ${e.side} has the initiative.`;
     case 'rejected':
@@ -66,5 +68,5 @@ export function eventText(state, e) {
 
 export function passText(state, e) {
   if (e.type !== 'activated' || e.action !== 'pass') return null;
-  return `${unitName(state.units[e.unit])} passes.`;
+  return `${unitName(state.units[e.unit])} holds.`;
 }
