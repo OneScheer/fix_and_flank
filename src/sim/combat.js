@@ -239,11 +239,12 @@ export function assaultChance(state, s, target) {
   return { chance, factors, cover };
 }
 
-// One tick of fire. movedSpeed: Map soldier id -> speed for soldiers that moved this tick.
-export function resolveFire(state, movedSpeed, rng, now, events) {
-  const { balance, tickSec } = state;
-
-  // Phase 1: everyone decides from the same picture of the battle.
+// Phase 1 of a tick of fire: everyone decides what to do from the same
+// picture of the battle. Also used, on a copy of the state, by the order
+// preview, so the preview shows exactly what the sim will decide.
+// Ticks down fire cooldowns and updates suppress aim points.
+export function decideActions(state, movedSpeed, events) {
+  const { tickSec } = state;
   const actions = [];
   for (const s of state.soldiers) {
     s.fireCooldown = Math.max(0, s.fireCooldown - tickSec);
@@ -290,6 +291,13 @@ export function resolveFire(state, movedSpeed, rng, now, events) {
     }
     if (pick) actions.push({ kind: 'fire', mode: task?.type === 'overwatch' ? 'overwatch' : 'aimed', s, rounds, ...pick, aim: { ...pick.target.pos } });
   }
+  return actions;
+}
+
+// One tick of fire. movedSpeed: Map soldier id -> speed for soldiers that moved this tick.
+export function resolveFire(state, movedSpeed, rng, now, events) {
+  const { balance } = state;
+  const actions = decideActions(state, movedSpeed, events);
 
   // Phase 2: resolve in id order.
   for (const act of actions) {

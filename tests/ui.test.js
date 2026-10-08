@@ -35,7 +35,7 @@ test('preview says whether the team arrives this turn, and the sim agrees', () =
   const s = makeState(grass(40, 1), units);
   for (const [x, arrivesNow] of [[5, true], [30, false]]) {
     const orders = [move('BLUFOR', 'ALPHA', x, 0, 'walk')];
-    const [line] = previewLines(s, 'BLUFOR', planOrders(s, orders));
+    const [line] = previewLines(s, 'BLUFOR', orders);
     assert.equal(line.text.includes('arrives this turn'), arrivesNow, line.text);
     const { state } = resolveTurn(s, orders);
     assert.equal(state.soldiers[0].move === null, arrivesNow);
@@ -50,7 +50,7 @@ test('preview reports soldiers that cannot move', () => {
     { side: 'BLUFOR', team: 'ALPHA', role: 'RFL', pos: [7, 1] },
   ];
   const s = makeState(rows, units);
-  const [line] = previewLines(s, 'BLUFOR', planOrders(s, [move('BLUFOR', 'ALPHA', 4, 1)]));
+  const [line] = previewLines(s, 'BLUFOR', [move('BLUFOR', 'ALPHA', 4, 1)]);
   assert.ok(line.notes.some((n) => n.startsWith('RFL will not move')), JSON.stringify(line));
 });
 
