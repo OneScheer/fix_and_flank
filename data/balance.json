@@ -48,6 +48,14 @@
     "blindMod": 2,
     "pinHits": 2
   },
+  "assault": {
+    "attackTn": { "ok": 5, "suppressed": 4, "pinned": 3 },
+    "attackerSuppressedMod": 1,
+    "defendTn": 5,
+    "dugInFrom": 5,
+    "dugInMod": -1,
+    "defenderSuppressedMod": 1
+  },
   "rally": {
     "worstOn": 6
   },

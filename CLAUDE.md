@@ -125,7 +125,13 @@ Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), 
 
 ### Assault
 
-Close combat when a team moves or fires into an adjacent enemy hex. Both sides roll a die per soldier at the same time (a pinned defender cannot shoot back); each success removes an enemy soldier. The attacker's TN depends on the defender's state (pinned easiest) and the defender's TN on the defender being dug in. If the defender is wiped out or ends with fewer soldiers than the attacker, it is eliminated and the attacker takes the hex; otherwise the attacker falls back pinned. Against an unsuppressed team in cover, an assault should be costly.
+Close combat when a fireteam moves (a 1-hex Move, in the movement phase) or fires (in the firefight) into the next hex with an enemy in it. Only fireteams assault; a suppressed team cannot move in but can assault by fire; a pinned team cannot assault.
+
+- Both sides roll one die per soldier at the same time; each success removes an enemy soldier.
+- Attacker's TN by the defender's state: 5+ ok, 4+ suppressed, 3+ pinned; +1 if the attacker is suppressed.
+- Defender's TN: 5+, 4+ if dug in (its cover against the attacker's hex is 5+ or better), +1 if suppressed. A pinned defender cannot shoot back.
+- If the defender is wiped out or ends with fewer soldiers than the attacker, it is eliminated (with any other enemy unit in the hex: overrun) and the attacker takes the hex. Otherwise the attacker falls back pinned. A tie holds the hex.
+- With the defaults, a full team assaulting an unsuppressed full team in a trench takes it 20% of the time and loses 2 men on average; against a suppressed team 56%; against a pinned team 99%. Fix first, then assault.
 
 ### Vision and fog of war
 
@@ -140,6 +146,7 @@ Before committing, the UI tells the player what will happen, for example:
 - "ALPHA fires on OPFOR ALPHA at 3,1 (open): 5 dice, hit on 5+ (4 base, +1 range 4 hexes). 87% at least one hit, 54% to pin. Casualties on 4+ (open), expected 0.83."
 - "ALPHA puts suppressive fire on 4,2 (trench), no spotted enemy there: 5 dice, hit on 6+ (4 base, +2 range 9 hexes, +2 behind a parapet (SE side), +2 no spotted enemy: suppressive fire, 10+ capped at 6+). If a team is there: 60% at least one hit, 20% to pin."
 - "Rally phase: ALPHA needs 3+ on a d6 to become suppressed, 4 in 6 (67%; SL 2 hexes away)."
+- "ALPHA assaults OPFOR ALPHA at 4,2 (trench, pinned): ALPHA 4 dice, hit on 3+ (defender pinned); OPFOR ALPHA is pinned and cannot shoot back. 99% to take the hex; otherwise ALPHA falls back pinned. Expected losses: ALPHA 0.00, OPFOR ALPHA 2.67."
 - "BRAVO fast moves 2 hexes in view of a known enemy: exposed until its next turn."
 
 ### After-action replay

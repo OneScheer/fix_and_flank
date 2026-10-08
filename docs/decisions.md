@@ -146,3 +146,16 @@ Answers to the follow-up questions:
 - **Who knows what:** a unit that fires has `fired` set until its side's next turn, so it is spotted by any enemy with line of sight. The preview never uses an unseen unit: for suppressive fire the odds assume a full, unsuppressed team. Whether OPFOR has anyone able to act in its phase is not shown to the player.
 - **Exact odds** (`odds.js`): binomial on hits; casualties as a binomial on "hit and then casualty" per die, capped at the men left. The acceptance test rolls 4000 seeded shots per case (open, trench front, trench flank) and checks that frequencies of at least one hit, pin, any casualty and mean casualties are within 3 points of the exact odds.
 - **OPFOR** still holds in its phase: it can fire under the rules, but choosing to is the AI (milestone 6).
+
+## Hex milestone 5: assault and the odds preview
+
+- **How an assault starts:** a 1-hex Move, or a Fire order, into the next hex with an enemy in it. A fast move cannot end in an enemy hex ("an assault is a 1-hex move"). An enemy in the next hex is always spotted (adjacent hexes always see each other), so offering the assault leaks nothing.
+- **Who:** only fireteams assault (the SL alone is one man). A suppressed team cannot move, so it can only assault by fire; it then hits on one worse (`assault.attackerSuppressedMod`). Pinned teams cannot fire or move, so cannot assault.
+- **Dice:** one per soldier on each side (the AR's second die is for fire, not close combat).
+- **TNs** (`balance.assault`): attacker by the defender's status (`attackTn`: ok 5, suppressed 4, pinned 3). Defender `defendTn` 5, `dugInMod` -1 when its directional cover against the attacker's hex is `dugInFrom` (5) or better (trench, woods, building, rubble, or a wall or parapet facing the attacker), `defenderSuppressedMod` +1 when suppressed; pinned rolls no dice. Clamped like fire.
+- **Which unit defends:** the fireteam in the hex (the SL only if alone). If the hex is taken, any other enemy unit in it (an SL) is eliminated too: overrun. Simplest rule; keeps stacking at one team plus SL.
+- **Outcome:** taken (the defender is wiped out, or has fewer men left than the attacker), repulsed (the attacker stays in its hex, pinned), attacker destroyed, or both destroyed (the hex is left empty). A tie holds the hex. Statuses of a holding defender do not change.
+- **Taking the hex** moves the attacker in (a `moved` event follows the `assault` event, so it animates) and counts as having moved, so it cannot fire that turn.
+- **Planning:** an assault order leaves the team in its hex in the projection, since the result is not known.
+- **Acceptance (preview odds equal the sim's):** the preview and the sim build the same `fireSolution` / `assaultSolution`, and the preview's numbers come from `fireOdds` / `assaultOdds` on it. Tests check the TN and dice in each event against the solution the preview used, that the preview text carries the exact percentages, and that 4000 seeded rolls per case match the exact odds (take within 3 points, mean losses within 0.08).
+- **Balance check for pillar 1:** with defaults, a frontal assault on an unsuppressed dug-in team succeeds 20% of the time and costs more men than it kills; on a pinned team 99%. Tested.

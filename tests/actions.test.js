@@ -118,9 +118,12 @@ test('if no unit of the side can act, committing still moves the game on', () =>
   assert.equal(phaseName(r.state), 'enemy action', 'pinned: no movement, no firefight; rally rolled');
 });
 
-test('moving into an enemy hex is not allowed yet (assault comes later)', () => {
-  const s = makeState(open(4, 4), [unit('BLUFOR', 'ALPHA', 1, 1), unit('OPFOR', 'ALPHA', 2, 1)]);
-  assert.match(validateAction(s, move(0, 2, 1)).reason, /enemy in that hex/);
+test('moving into the next hex with an enemy in it is an assault; a fast move cannot be', () => {
+  const s = makeState(open(5, 4), [unit('BLUFOR', 'ALPHA', 0, 1), unit('OPFOR', 'ALPHA', 2, 1)]);
+  assert.match(validateAction(s, { type: 'fastMove', unit: 0, path: [H(1, 1), H(2, 1)] }).reason, /an assault is a 1-hex move/);
+  const t = makeState(open(4, 4), [unit('BLUFOR', 'ALPHA', 1, 1), unit('OPFOR', 'ALPHA', 2, 1)]);
+  assert.equal(validateAction(t, move(0, 2, 1)).ok, true);
+  assert.equal(act(t, move(0, 2, 1)).events[1].type, 'assault');
 });
 
 // ---- fast move ----

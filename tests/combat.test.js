@@ -4,6 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyAction, validateAction } from '../src/sim/actions.js';
+import { assaultVia } from '../src/sim/assault.js';
 import { fireDice, fireSolution, pinAt } from '../src/sim/combat.js';
 import { fireOdds } from '../src/sim/odds.js';
 import { commitOrders } from '../src/sim/orders.js';
@@ -91,7 +92,8 @@ test('fire needs line of sight and no friendly in the hex; an adjacent spotted e
   assert.match(fireSolution(s, s.units[0], H(6, 0)).reason, /no line of sight \(woods at 3,0\)/);
   assert.match(fireSolution(s, s.units[0], H(1, 1)).reason, /friendly unit/);
   const a = makeState(open(4, 2), [unit('BLUFOR', 'ALPHA', 1, 0), unit('OPFOR', 'ALPHA', 2, 0)]);
-  assert.match(fireSolution(a, a.units[0], H(2, 0)).reason, /assault/);
+  assert.equal(assaultVia(a, fire(0, 2, 0)), 'fire');
+  assert.equal(assaultVia(a, fire(0, 3, 0)), null, 'not adjacent: plain fire');
 });
 
 test('fire is an order for the firefight and enemy action phases, for units that did not move and are not pinned', () => {

@@ -2,11 +2,12 @@
 // The preview uses the same validation and odds the sim uses.
 
 import { validateAction } from '../sim/actions.js';
+import { assaultSolution, assaultVia } from '../sim/assault.js';
 import { fireSolution, pinAt } from '../sim/combat.js';
 import { chanceAtLeast } from '../sim/dice.js';
 import { key } from '../sim/hex.js';
 import { lineOfSight } from '../sim/los.js';
-import { fireOdds } from '../sim/odds.js';
+import { assaultOdds, fireOdds } from '../sim/odds.js';
 import { terrainName, terrainOf } from '../sim/map.js';
 import { rallyNeed } from '../sim/phases.js';
 import { knownEnemies } from '../sim/spotting.js';
@@ -86,12 +87,33 @@ function describeCoverShort(sol) {
   return sol.cover.source === 'hexside' ? `${sol.cover.feature} facing the shooter` : sol.cover.terrain;
 }
 
+const signed = (m) => `${m.mod > 0 ? '+' : ''}${m.mod} ${m.why}`;
+const hitWord = (n) => `${n} hit${n === 1 ? '' : 's'}`;
+
+// The assault preview: both sides' dice and target numbers, the exact
+// chance to take the hex, and the expected losses.
+export function assaultPreview(state, u, h) {
+  const sol = assaultSolution(state, u, h);
+  if (!sol.ok) return `${u.team}: cannot assault there, ${sol.reason}.`;
+  const d = state.units[sol.defender];
+  const o = assaultOdds(sol);
+  const atk = [`defender ${d.status}`, ...sol.attackMods.map(signed)].join(', ');
+  const def = sol.defendDice
+    ? `${unitName(d)} ${sol.defendDice} dice, hit on ${sol.defendTn}+ (${[`${state.balance.assault.defendTn} base`, ...sol.defendMods.map(signed)].join(', ')}).`
+    : `${unitName(d)} is pinned and cannot shoot back.`;
+  const wiped = o.attackerDestroyed >= 0.005 ? ` ${pct(o.attackerDestroyed)} that ${u.team} is wiped out.` : '';
+  return `${u.team} assaults ${unitName(d)} at ${key(h)} (${terrainName(state.map, h)}, ${d.status}): ${u.team} ${sol.attackDice} dice, hit on ${sol.attackTn}+ (${atk}); ${def}`
+    + ` ${pct(o.take)} to take the hex; otherwise ${u.team} falls back pinned.${wiped}`
+    + ` Expected losses: ${u.team} ${o.expectedAttackerLosses.toFixed(2)}, ${unitName(d)} ${o.expectedDefenderLosses.toFixed(2)}.`;
+}
+
 // One line saying what the action will do, or why it cannot be done.
 export function previewAction(state, action) {
   const check = validateAction(state, action);
   const u = state.units[action.unit];
   if (!check.ok) return `${u.team}: cannot do that, ${check.reason}.`;
   const where = (h) => `${key(h)} (${terrainName(state.map, h)})`;
+  if (assaultVia(state, action)) return assaultPreview(state, u, action.type === 'move' ? action.to : action.target);
   switch (action.type) {
     case 'move':
       return `${u.team} moves 1 hex to ${where(action.to)}.${exposureNote(state, u, action.to, false)}`;
@@ -122,6 +144,7 @@ export function eventText(state, e, viewer = null) {
     return `Suspected position at ${key(e.pos)} dropped (${e.why}).`;
   }
   if (viewer && e.type === 'fire') return fireText(state, e, viewer);
+  if (e.type === 'assault') return assaultText(state, e);
   if (viewer && u && u.side !== viewer) {
     // Enemy actions: only moves and recovery of an enemy the viewer can see.
     if (!['moved', 'recover'].includes(e.type) || state.contacts?.[viewer]?.[u.id]?.level !== 'spotted') return null;
@@ -192,4 +215,25 @@ export function fireText(state, e, viewer) {
     effect = ' No visible effect.';
   }
   return `${who} ${kind} ${key(e.hex)}: ${dice}.${effect}`;
+}
+
+const RESULT_TEXT = {
+  taken: (a, d) => `${unitName(a)} takes the hex; ${unitName(d)} eliminated.`,
+  repulsed: (a, d) => `${unitName(d)} holds; ${unitName(a)} falls back pinned.`,
+  'attacker destroyed': (a, d) => `${unitName(a)} is wiped out; ${unitName(d)} holds.`,
+  'both destroyed': (a, d) => `Both ${unitName(a)} and ${unitName(d)} are wiped out.`,
+};
+
+// Close combat is seen by both sides.
+export function assaultText(state, e) {
+  const a = state.units[e.unit];
+  const d = state.units[e.defender];
+  const hits = (rolls, tn) => rolls.filter((r) => r >= tn).length;
+  const def = e.defendRolls.length
+    ? `${unitName(d)} needs ${e.defendTn}+, rolled ${e.defendRolls.join(' ')} (${hitWord(hits(e.defendRolls, e.defendTn))})`
+    : `${unitName(d)} pinned, cannot shoot back`;
+  const lost = [e.defenderLost.length ? `${unitName(d)} lost ${e.defenderLost.join(', ')}` : null, e.attackerLost.length ? `${unitName(a)} lost ${e.attackerLost.join(', ')}` : null].filter(Boolean);
+  const overrun = e.overrun.length ? ` Overrun: ${e.overrun.map((id) => unitName(state.units[id])).join(', ')}.` : '';
+  return `${unitName(a)} assaults ${unitName(d)} at ${key(e.hex)}: ${unitName(a)} needs ${e.attackTn}+, rolled ${e.attackRolls.join(' ')} (${hitWord(hits(e.attackRolls, e.attackTn))}); ${def}.`
+    + `${lost.length ? ` ${lost.join('; ')}.` : ''} ${RESULT_TEXT[e.result](a, d)}${overrun}`;
 }

@@ -5,6 +5,7 @@
 // (a hex got taken) is skipped with the reason, and that unit holds.
 
 import { applyAction, skipPhase, validateAction } from './actions.js';
+import { assaultVia } from './assault.js';
 import { canActivate, cloneState } from './state.js';
 
 // Carry out `actions` (in order) in the current phase, then make every unit
@@ -30,14 +31,19 @@ export function commitOrders(state, actions, rng) {
 }
 
 // Planning: where things will be if the earlier orders go as planned. Moves
-// are applied; dice orders only mark the unit as having acted, since their
-// result is not known yet. Never ends the phase, never rolls.
+// are applied; dice orders (fire, assault) only mark the unit as having
+// acted, since their result is not known yet. Never ends the phase, never rolls.
 export function projectOrders(state, actions) {
   let s = state;
   for (const a of actions) {
     if (!validateAction(s, a).ok) continue;
     s = cloneState(s);
     const u = s.units[a.unit];
+    if (assaultVia(s, a)) { // the result is not known: the team stays where it is
+      if (a.type === 'move') u.moved = true;
+      u.activated = true;
+      continue;
+    }
     if (a.type === 'move') u.pos = { ...a.to };
     if (a.type === 'fastMove') u.pos = { ...a.path[a.path.length - 1] };
     if (a.type === 'move' || a.type === 'fastMove') u.moved = true;

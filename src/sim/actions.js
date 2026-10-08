@@ -4,6 +4,8 @@
 // { type: 'fastMove', unit, path: [{col, row}, ...] }  up to fastMoveHexes;
 //                                                   entering rough terrain ends it
 // { type: 'fire', unit, target: {col, row} }      fire at a hex (see combat.js)
+//   A move or fire order into the next hex with an enemy in it is an
+//   assault (see assault.js).
 // { type: 'pass', unit }                           holds
 //
 // Only the current phase's side acts, and only with the phase's actions
@@ -12,6 +14,7 @@
 // units and commits them (see orders.js); when nobody is left to act, the
 // next phase starts.
 
+import { assaultSolution, assaultVia, resolveAssault } from './assault.js';
 import { fireSolution, resolveFire } from './combat.js';
 import { adjacent, key, neighbors } from './hex.js';
 import { inBounds, terrainName, terrainOf } from './map.js';
@@ -26,7 +29,7 @@ function enterable(state, h, unit) {
   if (!inBounds(state.map, h)) return 'off the map';
   if (terrainOf(state.map, state.balance, h).move === 'impassable') return `${terrainName(state.map, h)} is impassable`;
   const others = unitsAt(state, h).filter((u) => u.id !== unit.id);
-  if (others.some((u) => u.side !== unit.side)) return 'enemy in that hex (assault comes in a later milestone)';
+  if (others.some((u) => u.side !== unit.side)) return 'enemy in that hex: an assault is a 1-hex move';
   if (others.some((u) => u.kind === unit.kind)) {
     return unit.kind === 'leader' ? 'hex already holds a leader' : 'hex already holds a friendly team';
   }
@@ -45,6 +48,16 @@ export function validateAction(state, action) {
   if (action.type === 'pass') return { ok: true };
   if (!(phase.actions ?? []).includes(action.type)) return { ok: false, reason: `no ${ACTION_NAMES[action.type]} in the ${phase.name} phase` };
 
+  const via = assaultVia(state, action);
+  if (via === 'move' && isSuppressed(unit)) return { ok: false, reason: `${unit.team} is ${unit.status} and cannot move` };
+  if (via === 'fire') {
+    const may = mayFire(unit);
+    if (!may.ok) return may;
+  }
+  if (via) {
+    const sol = assaultSolution(state, unit, via === 'move' ? action.to : action.target);
+    return sol.ok ? { ok: true } : { ok: false, reason: sol.reason };
+  }
   if (action.type === 'fire') {
     const may = mayFire(unit);
     if (!may.ok) return may;
@@ -108,7 +121,13 @@ export function applyAction(state, action, rng) {
   const unit = next.units[action.unit];
   const events = [{ type: 'activated', unit: unit.id, side: unit.side, turn: next.turn, phase: currentPhase(next).name, action: action.type }];
 
-  if (action.type === 'move' || action.type === 'fastMove') {
+  const via = assaultVia(next, action);
+  if (via) {
+    const sol = assaultSolution(next, unit, via === 'move' ? action.to : action.target);
+    if (via === 'move') unit.moved = true;
+    if (via === 'fire') unit.fired = true;
+    events.push(...resolveAssault(next, unit, sol, via, rng));
+  } else if (action.type === 'move' || action.type === 'fastMove') {
     const path = action.type === 'move' ? [action.to] : action.path;
     for (const h of path) {
       events.push({ type: 'moved', unit: unit.id, from: { ...unit.pos }, to: { col: h.col, row: h.row } });
@@ -117,7 +136,7 @@ export function applyAction(state, action, rng) {
     unit.moved = true;
     if (action.type === 'fastMove') unit.exposed = true;
   }
-  if (action.type === 'fire') {
+  if (!via && action.type === 'fire') {
     events.push(resolveFire(next, unit, fireSolution(next, unit, action.target), rng));
     unit.fired = true;
   }

@@ -1,5 +1,5 @@
-// Fire: target numbers, dice, suppression and casualties. Assault comes in
-// milestone 5.
+// Fire: target numbers, dice, suppression and casualties. Fire into the next
+// hex with an enemy in it is an assault instead (assault.js).
 //
 // A shooter rolls one d6 per soldier (fire.diceByRole: the AR rolls two)
 // against a target number (TN): fire.baseTn plus modifiers for range, the
@@ -50,7 +50,6 @@ export function fireSolution(state, shooter, hex) {
   const target = enemies.find((u) => u.kind === 'team') ?? enemies[0] ?? null;
   const contacts = state.contacts?.[shooter.side] ?? {};
   const aimed = enemies.some((u) => contacts[u.id]?.level === 'spotted');
-  if (aimed && range === 1) return { ok: false, reason: 'enemy in the next hex: that is an assault (milestone 5)' };
 
   const cover = coverAgainst(map, balance, hex, shooter.pos);
   const mods = [];

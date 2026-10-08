@@ -4,7 +4,8 @@
 // come from src/ai.
 
 import { moveOptions, validateAction } from '../sim/actions.js';
-import { center, hexAt, key, mapBounds, same } from '../sim/hex.js';
+import { assaultVia } from '../sim/assault.js';
+import { center, hexAt, key, mapBounds, neighbors, same } from '../sim/hex.js';
 import { visibleFrom } from '../sim/los.js';
 import { inBounds, terrainName, terrainOf } from '../sim/map.js';
 import { fireDice } from '../sim/combat.js';
@@ -82,10 +83,12 @@ export function startApp(initialState, { reveal = false } = {}) {
   // ---- planning ----
 
   function options() {
-    if (app.selected === null || !planning()) return { moves: [], fast: new Map(), fire: new Set(), from: null };
+    if (app.selected === null || !planning()) return { moves: [], fast: new Map(), fire: new Set(), assault: [], from: null };
     const p = projectedFor(app.selected);
     const u = p.units[app.selected];
-    return { ...moveOptions(p, u), fire: fireTargets(p, u), from: u.pos };
+    const assault = neighbors(u.pos).filter((h) => assaultVia(p, { type: 'move', unit: u.id, to: h })
+      && validateAction(p, { type: 'move', unit: u.id, to: h }).ok);
+    return { ...moveOptions(p, u), fire: fireTargets(p, u), assault, from: u.pos };
   }
 
   // Hexes the unit can fire at (keys). Cached: it checks line of sight to every hex in range.
@@ -122,6 +125,7 @@ export function startApp(initialState, { reveal = false } = {}) {
     const id = app.selected;
     const o = options();
     if (o.fire.has(key(h))) return { type: 'fire', unit: id, target: h };
+    if (o.assault.some((m) => same(m, h))) return { type: 'move', unit: id, to: h };
     if (o.moves.some((m) => same(m, h))) return { type: 'move', unit: id, to: h };
     if (o.fast.has(key(h))) return { type: 'fastMove', unit: id, path: o.fast.get(key(h)) };
     return null;
@@ -302,16 +306,20 @@ export function startApp(initialState, { reveal = false } = {}) {
     if (firefight()) {
       const h = app.hover;
       if (h && options().fire.has(key(h))) return previewAction(projectedFor(u.id), { type: 'fire', unit: u.id, target: h });
-      return `${u.team} selected (${fireDiceText(u)}). Point at a hex to see the odds; click to fire. Red ring: spotted enemy (aimed fire). Elsewhere in the red area: suppressive fire.${deselect}`;
+      return `${u.team} selected (${fireDiceText(u)}). Point at a hex to see the odds; click to fire. Red ring: spotted enemy (aimed fire; in the next hex, an assault). Elsewhere in the red area: suppressive fire.${deselect}`;
     }
     const lead = u.kind === 'leader' ? ' Teams in his hex rally for sure in the rally phase; further away the roll must beat the distance to him.' : '';
-    return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${lead}${deselect}`;
+    const h = app.hover;
+    const o = options();
+    if (h && o.assault.some((m) => same(m, h))) return previewAction(projectedFor(u.id), { type: 'move', unit: u.id, to: h });
+    const assault = o.assault.length ? ' Red ring: assault the enemy there (point at it for the odds).' : '';
+    return `${u.team} selected. Click a green hex to move 1 hex, an orange hex to fast move 2.${assault}${lead}${deselect}`;
   }
 
   const fireDiceText = (u) => { const n = fireDice(app.state.balance, u); return `${n} ${n === 1 ? 'die' : 'dice'}`; };
 
   function renderHover() {
-    if (planning() && firefight() && app.selected !== null) $('preview').textContent = hint(unit(app.selected));
+    if (planning() && app.selected !== null) $('preview').textContent = hint(unit(app.selected));
     const h = app.hover;
     if (!h || !inBounds(app.state.map, h)) {
       $('status').textContent = 'Click a unit, then a hex to give its order. Space commits all orders. Drag: pan. Wheel: zoom.';
@@ -369,6 +377,7 @@ export function startApp(initialState, { reveal = false } = {}) {
       const h = { col, row };
       marks.push(spottedHere(h) ? { hex: h, color: COLORS.fire, width: 3, fill: COLORS.fireZone } : { hex: h, color: null, fill: COLORS.fireZone, inset: 0 });
     }
+    for (const h of o.assault) marks.push({ hex: h, color: COLORS.fire, width: 4 });
     if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
     if (app.view && app.selected !== null) {
       const from = projectedFor(app.selected).units[app.selected].pos;
@@ -389,8 +398,9 @@ export function startApp(initialState, { reveal = false } = {}) {
       app.plan.forEach((a, i) => {
         if (a.type === 'pass') return;
         const from = projectOrders(s, app.plan.slice(0, i)).units[a.unit].pos;
-        if (a.type === 'fire') {
-          drawFire(ctx, app.cam, from, a.target, !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.fire);
+        if (a.type === 'fire' || assaultVia(projectOrders(s, app.plan.slice(0, i)), a)) {
+          const to = a.type === 'fire' ? a.target : a.to;
+          drawFire(ctx, app.cam, from, to, !checks[i].ok ? COLORS.pinned : a.unit === app.selected ? COLORS.plan : COLORS.fire);
           return;
         }
         const path = a.type === 'move' ? [a.to] : a.path;
