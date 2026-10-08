@@ -259,6 +259,67 @@ export function drawHits(ctx, cam, hits) {
   ctx.globalAlpha = 1;
 }
 
+// Planned fire: [{ from, to, color, dashed, width }].
+export function drawFireLines(ctx, cam, lines) {
+  for (const l of lines) {
+    const a = toScreen(cam, l.from.x + 0.5, l.from.y + 0.5);
+    const b = toScreen(cam, l.to.x + 0.5, l.to.y + 0.5);
+    ctx.strokeStyle = l.color;
+    ctx.lineWidth = l.width ?? 1.5;
+    ctx.setLineDash(l.dashed ? [6, 4] : []);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+}
+
+// Circle around a tile center, radius in tiles: [{ pos, radius, color, fill }].
+export function drawRings(ctx, cam, rings) {
+  for (const r of rings) {
+    const c = toScreen(cam, r.pos.x + 0.5, r.pos.y + 0.5);
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, Math.max(3, r.radius * cam.scale), 0, Math.PI * 2);
+    if (r.fill) {
+      ctx.fillStyle = r.fill;
+      ctx.fill();
+    }
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
+// Overwatch arc: pie slice from `from` toward `toward`, arcDeg wide, radius in tiles.
+export function drawArc(ctx, cam, { from, toward, arcDeg, radius, color, fill }) {
+  const c = toScreen(cam, from.x + 0.5, from.y + 0.5);
+  const mid = Math.atan2(toward.y - from.y, toward.x - from.x);
+  const half = (arcDeg * Math.PI) / 360;
+  ctx.beginPath();
+  ctx.moveTo(c.x, c.y);
+  ctx.arc(c.x, c.y, radius * cam.scale, mid - half, mid + half);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// Explosions during playback: [{ pos, radius (tiles), alpha }].
+export function drawExplosions(ctx, cam, blasts) {
+  for (const b of blasts) {
+    const c = toScreen(cam, b.pos.x + 0.5, b.pos.y + 0.5);
+    ctx.globalAlpha = b.alpha;
+    ctx.fillStyle = '#ffb347';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, Math.max(6, b.radius * cam.scale), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
 export function drawHover(ctx, cam, tile) {
   if (!tile) return;
   const s = toScreen(cam, tile.x, tile.y);

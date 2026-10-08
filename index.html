@@ -52,11 +52,33 @@
         <div id="teams"></div>
       </section>
       <section>
-        <h2>Movement</h2>
+        <h2>Order (click on the map)</h2>
+        <div class="row">
+          <button id="mode-move" title="M">Move</button>
+          <button id="mode-fire" title="F">Fire</button>
+          <button id="mode-suppress" title="S">Suppress</button>
+        </div>
+        <div class="row" style="margin-top: 6px">
+          <button id="mode-overwatch" title="O">Overwatch</button>
+          <button id="mode-assault" title="A">Assault</button>
+          <button id="mode-grenade" title="T">Grenade</button>
+        </div>
+      </section>
+      <section>
+        <h2>Stance (order now)</h2>
+        <div class="row">
+          <button id="stance-stand">Stand</button>
+          <button id="stance-crouch">Crouch</button>
+          <button id="stance-prone">Prone</button>
+        </div>
+      </section>
+      <section>
+        <h2>Move speed</h2>
         <div class="row">
           <button id="speed-walk">Walk</button>
           <button id="speed-run">Run</button>
           <button id="speed-crawl">Crawl</button>
+          <button id="holdfire" title="X">Hold fire</button>
         </div>
       </section>
       <section class="row">
@@ -75,9 +97,9 @@
         <pre id="log"></pre>
       </section>
       <section class="keys">
-        Click to move, Shift+click to add a waypoint.
-        1-9 select team. W / R / C walk, run, crawl. H hold. Backspace undo last point. Delete clear.
-        Space engage (or skip playback). P replay. F fit map.
+        Orders: M move, F fire, S suppress, O overwatch, A assault, T grenade. Shift+click adds a move waypoint.
+        1-9 select team. W / R / C walk, run, crawl. X hold fire on the move. H hold. Backspace undo last point. Delete clear.
+        Space engage (or skip playback). P replay. Home fit map.
         L line of sight check. G grid. V debug: show all OPFOR.
       </section>
     </aside>

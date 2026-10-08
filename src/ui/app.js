@@ -1,18 +1,19 @@
 // Browser UI: input, order planning, preview, and turn playback.
-// The sim is only touched through planOrders (preview) and resolveTurn (ENGAGE).
+// The sim is only touched through previewTurn (built on sim code) and
+// resolveTurn (ENGAGE).
 
 import { lineOfSight } from '../sim/los.js';
 import { inBounds, isPassable, tileAt } from '../sim/map.js';
-import { planOrders, SPEEDS } from '../sim/orders.js';
+import { SPEEDS, STANCES } from '../sim/orders.js';
 import { teamsOf } from '../sim/state.js';
 import { resolveTurn } from '../sim/step.js';
 import { createCamera, fitCamera, panBy, toTile, zoomAt } from '../render/camera.js';
 import {
-  buildTerrainLayer, drawHits, drawHover, drawPaths, drawSightLines, drawTracers, drawSoldiers, drawSuspected, drawTerrain, drawWaypoints,
-  fitCanvas, teamColor,
+  buildTerrainLayer, drawArc, drawExplosions, drawFireLines, drawHits, drawHover, drawPaths, drawRings, drawSightLines,
+  drawTracers, drawSoldiers, drawSuspected, drawTerrain, drawWaypoints, fitCanvas, teamColor,
 } from '../render/canvas.js';
 import { buildFrames, contactsAt, eventsUpTo, positionAt, soldiersAt } from './playback.js';
-import { previewLines } from './preview.js';
+import { describePoint, explainShot, previewTurn } from './preview.js';
 
 const PLAYER_SIDE = 'BLUFOR';
 const PLAYBACK_SPEEDS = [1, 2, 4];
@@ -20,6 +21,19 @@ const CLICK_SLOP_PX = 4;
 const WHEEL_ZOOM = 1.15;
 const TRACER_TICKS = 1;   // how long a tracer stays on screen, in ticks
 const HIT_FLASH_TICKS = 1;
+const BLAST_TICKS = 2;
+const OVERWATCH_DRAW_TILES = 30; // how far the arc is drawn, not a rule
+// Order modes: what a click on the map orders the selected team to do.
+const MODES = ['move', 'fire', 'suppress', 'overwatch', 'assault', 'grenade'];
+const MODE_KEYS = { m: 'move', f: 'fire', s: 'suppress', o: 'overwatch', a: 'assault', t: 'grenade' };
+const MODE_HINT = {
+  move: 'Click: move. Shift+click: add waypoint.',
+  fire: 'Click a spotted enemy: aimed fire on it.',
+  suppress: 'Click a contact or a tile: suppress it.',
+  overwatch: 'Click: overwatch toward that point (90 degree arc).',
+  assault: 'Click a contact or a tile: assault it.',
+  grenade: 'Click a tile: grenade (GRN 40 mm, or nearest hand grenade).',
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -30,8 +44,11 @@ export function startApp(initialState) {
     cam: createCamera(),
     selectedTeam: teamsOf(initialState, PLAYER_SIDE)[0],
     speed: 'walk',
+    holdFire: false, // move orders: hold fire on the way (flanking element)
+    mode: 'move',
     pending: new Map(),
     plans: [],
+    preview: null,
     history: [],
     playback: null,
     playbackSpeed: 1,
@@ -48,7 +65,8 @@ export function startApp(initialState) {
   fitCamera(app.cam, app.state.map, width, height);
 
   function replan() {
-    app.plans = planOrders(app.state, [...app.pending.values()]);
+    app.preview = previewTurn(app.state, PLAYER_SIDE, [...app.pending.values()]);
+    app.plans = app.preview.plans;
     renderPanel();
   }
 
@@ -80,6 +98,7 @@ export function startApp(initialState) {
     }
     app.pending.set(app.selectedTeam, {
       type: 'move', side: PLAYER_SIDE, team: app.selectedTeam, dest: { x: tile.x, y: tile.y }, speed: app.speed, via,
+      ...(app.holdFire ? { holdFire: true } : {}),
     });
     app.message = '';
     replan();
@@ -95,6 +114,69 @@ export function startApp(initialState) {
     } else {
       clearOrder();
     }
+  }
+
+  // A known contact on or next to the tile (spotted first), from what BLUFOR knows.
+  function contactNear(tile, spottedOnly) {
+    const known = Object.entries(app.state.contacts[PLAYER_SIDE] ?? {})
+      .map(([id, c]) => ({ id: Number(id), ...c }))
+      .filter((c) => (!spottedOnly || c.level === 'spotted') && app.state.soldiers[c.id].status !== 'dead')
+      .map((c) => ({ ...c, d: Math.hypot(c.pos.x - tile.x, c.pos.y - tile.y) }))
+      .filter((c) => c.d <= 1.5)
+      .sort((a, b) => (a.level === 'spotted' ? 0 : 1) - (b.level === 'spotted' ? 0 : 1) || a.d - b.d || a.id - b.id);
+    return known[0] ?? null;
+  }
+
+  function setOrder(order) {
+    app.pending.set(app.selectedTeam, { side: PLAYER_SIDE, team: app.selectedTeam, ...order });
+    app.message = '';
+    replan();
+  }
+
+  // A click on the map in the current order mode.
+  function orderAt(tile, shift) {
+    const { map } = app.state;
+    if (!inBounds(map, tile.x, tile.y)) return;
+    const c = contactNear(tile, false);
+    switch (app.mode) {
+      case 'move':
+        orderMove(tile, shift);
+        break;
+      case 'fire': {
+        const target = contactNear(tile, true);
+        if (!target) setMessage('Fire needs a spotted enemy: click on an enemy counter.');
+        else setOrder({ type: 'fire', target: target.id });
+        break;
+      }
+      case 'suppress':
+        setOrder(c ? { type: 'suppress', at: { ...c.pos }, target: c.id } : { type: 'suppress', at: { ...tile } });
+        break;
+      case 'overwatch':
+        setOrder({ type: 'overwatch', toward: { ...tile } });
+        break;
+      case 'assault': {
+        const at = c ? c.pos : tile;
+        if (!isPassable(tileAt(map, at.x, at.y))) setMessage(`${at.x},${at.y} is impassable.`);
+        else setOrder(c ? { type: 'assault', at: { ...at }, target: c.id } : { type: 'assault', at: { ...at } });
+        break;
+      }
+      case 'grenade':
+        setOrder({ type: 'grenade', at: { ...tile } });
+        break;
+      default:
+        break;
+    }
+  }
+
+  function setMode(mode) {
+    app.mode = mode;
+    app.message = '';
+    renderPanel();
+    renderHover();
+  }
+
+  function orderStance(stance) {
+    setOrder({ type: 'stance', stance });
   }
 
   function orderHold() {
@@ -118,10 +200,26 @@ export function startApp(initialState) {
     }
   }
 
+  function toggleHoldFire() {
+    app.holdFire = !app.holdFire;
+    const order = app.pending.get(app.selectedTeam);
+    if (order?.type === 'move') {
+      const { holdFire, ...rest } = order;
+      void holdFire;
+      app.pending.set(app.selectedTeam, app.holdFire ? { ...rest, holdFire: true } : rest);
+      replan();
+    } else {
+      renderPanel();
+    }
+  }
+
   function selectTeam(team) {
     app.selectedTeam = team;
     const order = app.pending.get(team);
-    if (order?.type === 'move') app.speed = order.speed;
+    if (order?.type === 'move') {
+      app.speed = order.speed;
+      app.holdFire = Boolean(order.holdFire);
+    }
     renderPanel();
   }
 
@@ -186,32 +284,32 @@ export function startApp(initialState) {
       .map((e) => e.id);
   }
 
-  // Why a shot was hard, in plain words: the factors that cut the chance most.
-  function explainChance(e) {
-    const { combat } = app.state.balance;
-    const f = e.factors;
-    const parts = [`range ${Math.round(e.rangeM)} m`];
-    if (f.cover < 1 && e.cover.tile) {
-      const where = e.cover.tile.x === e.at.x && e.cover.tile.y === e.at.y
-        ? `target in ${e.cover.tile.what}`
-        : `target behind ${e.cover.tile.what} from the ${e.cover.direction}`;
-      parts.push(where);
+  function chanceText(e) {
+    return `${Math.round(e.chance * 100)}% per round: ${explainShot(app.state, e)}`;
+  }
+
+  function orderText(o) {
+    const where = (p, id) => describePoint(app.state, PLAYER_SIDE, p, id);
+    switch (o.type) {
+      case 'move':
+        return `move (${o.speed}${o.holdFire ? ', hold fire' : ''}) to ${o.dest.x},${o.dest.y}${o.via?.length ? ` via ${o.via.map((p) => `${p.x},${p.y}`).join(', ')}` : ''}`;
+      case 'fire': return `fire on ${where(null, o.target)}`;
+      case 'suppress': return `suppress ${where(o.at, o.target)}`;
+      case 'overwatch': return `overwatch toward ${o.toward.x},${o.toward.y}`;
+      case 'assault': return `assault ${where(o.at, o.target)}`;
+      case 'grenade': return `grenade on ${o.at.x},${o.at.y}`;
+      case 'stance': return `go ${o.stance}`;
+      default: return o.type;
     }
-    const stance = Object.keys(combat.targetStance).find((k) => combat.targetStance[k] === f.targetStance);
-    if (stance && stance !== 'stand') parts.push(`target ${stance === 'crouch' ? 'crouched' : stance}`);
-    if (f.movement < 1) parts.push('firing on the move');
-    if (f.suppression < 1) {
-      const level = Object.keys(combat.suppressionAccuracy).find((k) => combat.suppressionAccuracy[k] === f.suppression);
-      parts.push(`shooter ${level}`);
-    }
-    if (f.wounded < 1) parts.push('shooter wounded');
-    return `${Math.round(e.chance * 100)}% per round: ${parts.join(', ')}`;
   }
 
   // Only what the player's side knows goes into the log.
   function formatEvent(e, ctx) {
     const { byId, tickSec, hitByUs, after } = ctx;
-    const t = `${(e.tick * tickSec).toFixed(1)} s`;
+    // The sim's clock: an event in tick k happens by the end of it, (k + 1) x tickSec.
+    // Orders are given before the turn runs: 0.0 s.
+    const at = e.type === 'order' || e.type === 'order_rejected' ? 0 : (e.tick + 1) * tickSec;
+    const t = `${at.toFixed(1)} s`;
     const s = byId.get(e.id);
     if (['spotted', 'lost', 'contact_expired', 'suspected'].includes(e.type)) {
       if (e.side !== PLAYER_SIDE) return null;
@@ -221,15 +319,43 @@ export function startApp(initialState) {
       return `${t}  Contact at ${e.pos.x},${e.pos.y} is stale, dropped.`;
     }
     if (e.type === 'fire') {
-      const target = byId.get(e.target);
+      const target = e.target === null ? null : byId.get(e.target);
       const hits = `${e.hits} hit${e.hits === 1 ? '' : 's'}`;
       if (s.side === PLAYER_SIDE) {
-        return `${t}  ${soldierName(s)} fires ${e.rounds} at enemy at ${e.at.x},${e.at.y}: ${hits}. ${explainChance(e)}.`;
+        if (e.mode === 'suppress') {
+          const onWho = target ? ` ${hits} (${chanceText(e)})` : ' no exposed target there, suppression only';
+          return `${t}  ${soldierName(s)} suppresses ${e.at.x},${e.at.y} with ${e.rounds} rounds:${onWho}.`;
+        }
+        return `${t}  ${soldierName(s)} fires ${e.rounds} at enemy at ${e.at.x},${e.at.y}: ${hits}. ${chanceText(e)}.`;
       }
-      if (target.side === PLAYER_SIDE) {
-        return `${t}  Taking fire from ${e.from.x},${e.from.y} at ${soldierName(target)}: ${hits}.`;
+      if (target?.side === PLAYER_SIDE) return `${t}  Taking fire from ${e.from.x},${e.from.y} at ${soldierName(target)}: ${hits}.`;
+      if (e.mode === 'suppress' && e.suppressed.some((x) => byId.get(x.id).side === PLAYER_SIDE)) {
+        return `${t}  Under suppressive fire from ${e.from.x},${e.from.y}.`;
       }
       return null;
+    }
+    if (e.type === 'assault') {
+      const target = byId.get(e.target);
+      const why = `${Math.round(e.chance * 100)}%: target ${target.status === 'pinned' ? 'pinned' : 'not pinned'}, ${e.factors.exposure >= 1 ? 'exposed from that side' : 'in cover from that side'}`;
+      if (s.side === PLAYER_SIDE) return `${t}  ${soldierName(s)} close assault on enemy at ${e.at.x},${e.at.y}: ${e.success ? 'KILLED' : 'failed'} (${why}).`;
+      if (target.side === PLAYER_SIDE) return `${t}  ${soldierName(target)} assaulted from ${e.from.x},${e.from.y}: ${e.success ? 'killed' : 'held'}.`;
+      return null;
+    }
+    if (e.type === 'throw') {
+      if (s.side !== PLAYER_SIDE) return null;
+      const name = app.state.weapons.grenades[e.kind].name;
+      return `${t}  ${soldierName(s)} ${e.kind === '40mm' ? 'fires' : 'throws'} a ${name} at ${e.aim.x},${e.aim.y}.`;
+    }
+    if (e.type === 'explosion') {
+      const ours = byId.get(e.by).side === PLAYER_SIDE;
+      const caught = e.effects.filter((x) => x.hit && byId.get(x.id).side === PLAYER_SIDE).map((x) => soldierName(byId.get(x.id)));
+      const enemyHits = e.effects.filter((x) => x.hit && byId.get(x.id).side !== PLAYER_SIDE).length;
+      if (!ours && !caught.length && !e.effects.some((x) => byId.get(x.id).side === PLAYER_SIDE)) return null;
+      const off = e.pos.x !== e.aim.x || e.pos.y !== e.aim.y ? ` (aimed at ${e.aim.x},${e.aim.y})` : '';
+      const parts = [];
+      if (ours) parts.push(enemyHits ? `${enemyHits} enemy hit` : 'no enemy hit');
+      if (caught.length) parts.push(`OWN CASUALTIES: ${caught.join(', ')}`);
+      return `${t}  ${ours ? 'Grenade' : 'Enemy grenade'} explodes at ${e.pos.x},${e.pos.y}${off}${parts.length ? `: ${parts.join('; ')}` : ''}.`;
     }
     if (e.type === 'status' && s.side !== PLAYER_SIDE) {
       if (!hitByUs.has(e.id) || (e.to !== 'down' && e.to !== 'dead')) return null;
@@ -239,11 +365,13 @@ export function startApp(initialState) {
     if ((e.side ?? s?.side) !== PLAYER_SIDE) return null;
     switch (e.type) {
       case 'order':
-        return `${t}  ${e.team}: ${e.order.type}${e.order.type === 'move' ? ` (${e.order.speed}) to ${e.order.dest.x},${e.order.dest.y}${e.order.via?.length ? ` via ${e.order.via.map((p) => `${p.x},${p.y}`).join(', ')}` : ''}` : ''}.`;
+        return `${t}  ${e.team}: ${orderText(e.order)}.`;
       case 'order_rejected':
         return `${t}  ${e.team}: order rejected, ${e.reason}.`;
       case 'order_failed':
-        return `${t}  ${soldierName(s)} did not move: ${e.reason}.`;
+        return `${t}  ${soldierName(s)} could not carry out the order: ${e.reason}.`;
+      case 'no_fire':
+        return `${t}  ${soldierName(s)} cannot fire: ${e.reason}.`;
       case 'blocked':
         return `${t}  ${soldierName(s)} blocked at ${e.at.x},${e.at.y}, waiting.`;
       case 'arrived':
@@ -274,7 +402,8 @@ export function startApp(initialState) {
       : `Turn ${state.turn + 1}: planning. ${contactText}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
     $('lostool').classList.toggle('selected', app.losTool);
 
-    const lines = previewLines(state, PLAYER_SIDE, app.plans);
+    if (!app.preview && !busy) app.preview = previewTurn(state, PLAYER_SIDE, [...app.pending.values()]);
+    const lines = app.preview?.lines ?? [];
     const teams = $('teams');
     teams.replaceChildren(...lines.map((line) => {
       const row = document.createElement('button');
@@ -299,6 +428,14 @@ export function startApp(initialState) {
       b.classList.toggle('selected', app.speed === speed);
       b.disabled = busy;
     }
+    for (const mode of MODES) {
+      const b = $(`mode-${mode}`);
+      b.classList.toggle('selected', app.mode === mode);
+      b.disabled = busy;
+    }
+    for (const stance of STANCES) $(`stance-${stance}`).disabled = busy;
+    $('holdfire').classList.toggle('selected', app.holdFire);
+    $('holdfire').disabled = busy;
     $('hold').disabled = busy;
     $('clear').disabled = busy || !app.pending.has(app.selectedTeam);
     $('engage').disabled = busy;
@@ -336,7 +473,7 @@ export function startApp(initialState) {
     const t = app.hover;
     const { map } = app.state;
     if (!t || !inBounds(map, t.x, t.y)) {
-      $('status').textContent = 'Click: move selected team. Shift+click: add waypoint. Drag: pan. Wheel: zoom.';
+      $('status').textContent = `${MODE_HINT[app.mode]} Drag: pan. Wheel: zoom.`;
       return;
     }
     const tile = tileAt(map, t.x, t.y);
@@ -422,15 +559,55 @@ export function startApp(initialState) {
       || (e.by !== undefined && sideOf(e.by) === PLAYER_SIDE);
     const tracers = [];
     const hits = [];
+    const blasts = [];
+    const lobbed = [];
     for (const e of entry.events) {
       const age = t - e.tick;
-      if (e.type === 'fire' && age >= 0 && age < TRACER_TICKS && ours(e)) {
+      if ((e.type === 'fire' || e.type === 'assault') && age >= 0 && age < TRACER_TICKS && ours(e)) {
         tracers.push({ from: e.from, to: e.at, side: sideOf(e.id), alpha: 1 - age / TRACER_TICKS });
+      } else if (e.type === 'throw' && age >= 0 && ours(e)) {
+        const flightTicks = (e.landsAtSec - (entry.before.turn * entry.before.balance.turn.durationSec + (e.tick + 1) * entry.before.tickSec)) / entry.before.tickSec;
+        if (age < flightTicks + 1) lobbed.push({ from: e.from, to: e.aim, side: sideOf(e.id), alpha: 0.5 });
+      } else if (e.type === 'explosion' && age >= 0 && age < BLAST_TICKS) {
+        blasts.push({ pos: e.pos, radius: entry.before.balance.grenade.hitByDistanceTiles.at(-1)[0], alpha: 0.7 * (1 - age / BLAST_TICKS) });
       } else if (e.type === 'hit' && age >= 0 && age < HIT_FLASH_TICKS && ours(e)) {
         hits.push({ pos: positionAt(app.playback.frames, e.id, e.tick + 1), alpha: 1 - age / HIT_FLASH_TICKS });
       }
     }
-    return { tracers, hits };
+    return { tracers, hits, blasts, lobbed };
+  }
+
+  // Lines of fire, arcs and grenade marks for the planned (or continuing) orders.
+  function drawOrderPreview(ctx, cam) {
+    const p = app.preview;
+    if (!p) return;
+    const lines = [];
+    const rings = [];
+    for (const s of p.state.soldiers) {
+      if (s.side !== PLAYER_SIDE || !s.task || s.status === 'dead' || s.status === 'down') continue;
+      const color = teamColor(s.team);
+      const act = p.actions.get(s.id);
+      if (s.task.type === 'suppress') {
+        const ok = act?.mode === 'suppress';
+        lines.push({ from: s.pos, to: s.task.at, color: ok ? color : 'rgba(240, 90, 70, 0.9)', dashed: true });
+        rings.push({ pos: s.task.at, radius: app.state.balance.suppression.nearMissRadiusTiles, color, fill: 'rgba(255, 200, 80, 0.12)' });
+      } else if (s.task.type === 'fire' || s.task.type === 'overwatch') {
+        if (act?.target) lines.push({ from: s.pos, to: act.target.pos, color });
+        if (s.task.type === 'overwatch' && (s.role === 'TL' || !p.state.soldiers.some((x) => x.team === s.team && x.side === s.side && x.role === 'TL'))) {
+          drawArc(ctx, cam, {
+            from: s.pos, toward: s.task.toward, arcDeg: app.state.balance.orders.overwatch.arcDeg,
+            radius: OVERWATCH_DRAW_TILES, color, fill: 'rgba(120, 180, 255, 0.10)',
+          });
+        }
+      } else if (s.task.type === 'grenade') {
+        const plan = p.plans.find((x) => x.order?.team === s.team && x.grenade);
+        lines.push({ from: s.pos, to: s.task.at, color, dashed: true });
+        rings.push({ pos: s.task.at, radius: app.state.balance.grenade.dangerRadiusM / app.state.balance.map.tileMeters + (plan?.grenade.scatterTiles ?? 0),
+          color: 'rgba(240, 90, 70, 0.9)', fill: 'rgba(240, 90, 70, 0.10)' });
+      }
+    }
+    drawRings(ctx, cam, rings);
+    drawFireLines(ctx, cam, lines);
   }
 
   function frame(now) {
@@ -456,9 +633,11 @@ export function startApp(initialState) {
         ...view.counters,
       ];
       const fx = combatEffects(pb.entry, t);
+      drawFireLines(ctx, cam, fx.lobbed.map((l) => ({ ...l, color: 'rgba(255, 255, 255, 0.5)', dashed: true })));
       drawTracers(ctx, cam, fx.tracers);
       drawSoldiers(ctx, cam, soldiers);
       drawHits(ctx, cam, fx.hits);
+      drawExplosions(ctx, cam, fx.blasts);
       soldiers = [];
       renderLog();
       if (pb.elapsedTicks >= ticks) endPlayback();
@@ -466,14 +645,14 @@ export function startApp(initialState) {
       const paths = [];
       const planned = new Set();
       for (const plan of app.plans) {
-        if (!plan.ok || plan.order.type !== 'move') continue;
+        if (!plan.ok || (plan.order.type !== 'move' && plan.order.type !== 'assault')) continue;
         planned.add(plan.order.team);
         for (const p of plan.soldiers) {
           if (!p.path) continue;
           paths.push({ from: state.soldiers[p.id].pos, path: p.path, color: teamColor(plan.order.team), dashed: false });
         }
       }
-      const held = new Set(app.plans.filter((p) => p.ok && p.order.type === 'hold').map((p) => p.order.team));
+      const held = new Set(app.plans.filter((p) => p.ok && p.order.type !== 'move' && p.order.type !== 'assault').map((p) => p.order.team));
       for (const s of state.soldiers) {
         if (!s.move || s.side !== PLAYER_SIDE || planned.has(s.team) || held.has(s.team)) continue;
         paths.push({ from: s.pos, path: s.move.path.slice(s.move.i), color: teamColor(s.team), dashed: true });
@@ -489,6 +668,7 @@ export function startApp(initialState) {
       const known = new Map(Object.entries(state.contacts[PLAYER_SIDE] ?? {}).map(([id, c]) => [Number(id), c]));
       const view = enemyView(known, (s) => s.pos, () => ({}), app.enemyCasualties);
       drawSuspected(ctx, cam, view.suspected);
+      drawOrderPreview(ctx, cam);
       if (app.losTool && app.hover && inBounds(state.map, app.hover.x, app.hover.y)) {
         drawSightLines(ctx, cam, sightChecks(app.hover).map(({ soldier, los }) => ({
           from: soldier.pos, to: app.hover, clear: los.clear, blockedAt: los.blockedAt,
@@ -538,7 +718,7 @@ export function startApp(initialState) {
       (s) => s.side === PLAYER_SIDE && s.status !== 'dead' && s.pos.x === tile.x && s.pos.y === tile.y,
     );
     if (own && !e.shiftKey) selectTeam(own.team);
-    else orderMove(tile, e.shiftKey);
+    else orderAt(tile, e.shiftKey);
   });
   canvas.addEventListener('pointerleave', () => {
     app.hover = null;
@@ -561,16 +741,18 @@ export function startApp(initialState) {
       else engage();
       return;
     }
-    if (k === 'f') {
+    if (k === 'home' || k === '0') {
       const { width: w, height: h } = fitCanvas(canvas);
       fitCamera(app.cam, app.state.map, w, h);
       return;
     }
     if (app.playback) return;
     if (/^[1-9]$/.test(k) && teams[Number(k) - 1]) selectTeam(teams[Number(k) - 1]);
+    else if (MODE_KEYS[k]) setMode(MODE_KEYS[k]);
     else if (k === 'w') setSpeed('walk');
     else if (k === 'r') setSpeed('run');
     else if (k === 'c') setSpeed('crawl');
+    else if (k === 'x') toggleHoldFire();
     else if (k === 'h') orderHold();
     else if (k === 'backspace') undoPoint();
     else if (k === 'delete') clearOrder();
@@ -585,6 +767,9 @@ export function startApp(initialState) {
 
   for (const speed of SPEEDS) $(`speed-${speed}`).onclick = () => setSpeed(speed);
   $('hold').onclick = orderHold;
+  $('holdfire').onclick = toggleHoldFire;
+  for (const mode of MODES) $(`mode-${mode}`).onclick = () => setMode(mode);
+  for (const stance of STANCES) $(`stance-${stance}`).onclick = () => orderStance(stance);
   $('clear').onclick = clearOrder;
   $('engage').onclick = engage;
   $('replay').onclick = replayLast;
