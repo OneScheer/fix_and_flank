@@ -207,3 +207,10 @@ Answers to the follow-up questions:
 - **Fire:** dashed line from the shooter to a crosshair on the target hex, tagged with the shooter's letter; navy (#1F3F8F) for BLUFOR, dark red for OPFOR. Planned assaults use the same marker in orange-red. Fire markers are drawn over the counters.
 - **Fonts:** the design's Barlow Condensed is used if installed, else a condensed system font. Not loaded from Google Fonts: no network calls at runtime.
 - The SL sharing a hex with a team now sits at its lower left, clear of the team's badges.
+
+## Interface redesign (user request)
+
+- Replaced the dark monospace developer-panel look with the paper-and-ink style of the user's "Fireteam Counters" canvas: paper ground (#E8E5DA, #F6F4EE), ink (#15181A) rules and buttons, Barlow Condensed for titles and labels, Barlow for text. Fonts are bundled in `assets/fonts/` (latin subset, SIL Open Font License, `OFL.txt`), so the game still makes no network calls.
+- Layout fills the window: a slim header (mission, phase track as a segmented bar, turn of limit and contacts), the map filling the rest, a side panel `clamp(340px, 29vw, 500px)` wide. The camera fits the map with a 1.5% margin and refits on resize. Root font size scales with the window. Below 900 px wide the panel goes under the map.
+- Side panel: phase card; a roster card per unit (small counter, role pips, status tag, its order); the preview box; Hold / Clear all / Line of sight; Commit; the log as separate lines with turn chips; "How to play" folded away.
+- Map palette made lighter (printed-map look) so ink counters stand out; move, fast move and fire highlights recolored for light ground; the selected counter gets a dashed ink outline on a pale halo.

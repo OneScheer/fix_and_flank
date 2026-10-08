@@ -154,9 +154,8 @@ export function startApp(initialState, { reveal = false } = {}) {
       if (e.type === 'turn_start') turn = e.turn;
       const line = passText(before, e, PLAYER_SIDE) ?? eventText(r.state, e, PLAYER_SIDE);
       if (!line) continue;
-      if (e.type === 'turn_start') app.log.push('');
-      const heading = ['turn_end', 'turn_start', 'phase_start', 'game_over'].includes(e.type);
-      app.log.push(heading ? line : `T${turn}  ${line}`);
+      const kind = e.type === 'game_over' ? 'over' : ['turn_end', 'turn_start', 'phase_start'].includes(e.type) ? 'head' : 'line';
+      app.log.push({ text: line, kind, turn });
     }
     if (app.log.length > MAX_LOG) app.log.splice(0, app.log.length - MAX_LOG);
     // Animate the moves one unit after another, in the order they ran, then
@@ -240,14 +239,21 @@ export function startApp(initialState, { reveal = false } = {}) {
   function activeText() {
     const s = app.state;
     if (s.result) {
-      return `Mission over: ${s.result.winner === PLAYER_SIDE ? 'you win' : 'you lose'}. ${s.result.why.charAt(0).toUpperCase()}${s.result.why.slice(1)}. Reload the page to play again (add ?seed=2 for other dice).`;
+      return `${s.result.why.charAt(0).toUpperCase()}${s.result.why.slice(1)}. Reload the page to play again (add ?seed=2 for other dice).`;
     }
-    if (!planning()) return app.aiPending || s.activeSide !== PLAYER_SIDE ? 'Enemy action: OPFOR is acting.' : 'Carrying out orders.';
+    if (!planning()) return app.aiPending || s.activeSide !== PLAYER_SIDE ? 'OPFOR is acting.' : 'Carrying out orders.';
     const total = myUnits().length;
     if (firefight()) {
-      return `Firefight phase: ${total} unit${total === 1 ? '' : 's'} that did not move can fire. ${app.plan.length} of ${total} have a target; the rest hold fire.`;
+      return `${total} unit${total === 1 ? '' : 's'} that did not move can fire. ${app.plan.length} of ${total} have a target; the rest hold fire.`;
     }
-    return `Movement phase: give move orders, then commit. A unit that moves cannot fire this turn. ${app.plan.length} of ${total} have an order; the rest hold.`;
+    return `Give move orders, then commit. A unit that moves cannot fire this turn. ${app.plan.length} of ${total} have an order; the rest hold.`;
+  }
+
+  function phaseTitle() {
+    const s = app.state;
+    if (s.result) return s.result.winner === PLAYER_SIDE ? 'Mission accomplished' : 'Mission failed';
+    if (s.activeSide !== PLAYER_SIDE) return 'Enemy action';
+    return phaseLabel(currentPhase(s).name);
   }
 
   // Header: the turn's phases, the current one lit.
@@ -257,50 +263,105 @@ export function startApp(initialState, { reveal = false } = {}) {
       const el = document.createElement('span');
       el.textContent = phaseLabel(p.name);
       el.title = `${p.side}${p.automatic ? ', automatic' : ''}`;
-      if (i < s.phase) el.className = 'done';
-      if (i === s.phase && s.activeSide !== null) el.className = 'now';
+      const cls = [];
+      if (p.side !== PLAYER_SIDE) cls.push('enemy');
+      if (i < s.phase || s.result) cls.push('done');
+      if (i === s.phase && s.activeSide !== null) cls.push('now');
+      el.className = cls.join(' ');
       return el;
     });
     $('phases').replaceChildren(...spans);
   }
 
+  const el = (tag, cls, text) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  };
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const svgEl = (tag, attrs) => {
+    const e = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+  };
+
+  // A small counter for the roster: the NATO frame with the infantry X and the echelon mark.
+  function chip(u) {
+    const svg = svgEl('svg', { class: 'chip', viewBox: '0 0 62 48', 'aria-hidden': 'true' });
+    const ink = COLORS.ink;
+    if (u.kind === 'leader') svg.append(svgEl('circle', { cx: 31, cy: 6, r: 3, fill: ink }));
+    else {
+      svg.append(svgEl('circle', { cx: 31, cy: 7, r: 4.5, fill: 'none', stroke: ink, 'stroke-width': 2 }));
+      svg.append(svgEl('line', { x1: 24, y1: 14, x2: 38, y2: 0, stroke: ink, 'stroke-width': 2 }));
+    }
+    const fill = u.status === 'eliminated' ? '#b9b5a8' : COLORS.blufor;
+    svg.append(svgEl('rect', { x: 2, y: 15, width: 58, height: 31, fill, stroke: ink, 'stroke-width': 3 }));
+    svg.append(svgEl('path', { d: 'M2 15 L60 46 M60 15 L2 46', stroke: ink, 'stroke-width': 2.5 }));
+    return svg;
+  }
+
+  const ROLE_NAMES = { TL: 'TL', AR: 'AR', GRN: 'GR', RFL: 'RFL', SL: 'SL' };
+
+  function unitCard(s, u) {
+    const b = el('button', 'unit');
+    if (u.id === app.selected) b.classList.add('selected');
+    const ready = canActivate(s, u) && planning();
+    b.disabled = !ready;
+    if (!ready) b.classList.add('idle');
+    const who = el('div');
+    const name = el('div', 'name', u.kind === 'leader' ? 'Squad leader' : u.team);
+    const roles = el('div', 'roles');
+    const roster = u.kind === 'leader' ? s.balance.unit.leaderRoles : s.balance.unit.roles;
+    for (const r of roster) {
+      const alive = u.soldiers.includes(r);
+      const span = el('span', alive ? '' : 'lost');
+      span.append(el('i', alive ? 'on' : ''), document.createTextNode(ROLE_NAMES[r] ?? r));
+      roles.append(span);
+    }
+    if (u.exposed) roles.append(el('span', '', 'exposed'));
+    who.append(name, roles);
+    const status = u.status === 'ok' ? (u.moved ? 'moved' : 'ready') : u.status;
+    const tag = el('span', `tag ${u.status}`, status);
+    const order = el('div', 'order', u.status === 'eliminated' ? '' : orderLine(u));
+    if (order.textContent.includes('NOT POSSIBLE')) order.classList.add('bad');
+    b.append(chip(u), who, tag, order);
+    b.onclick = () => select(u.id);
+    return b;
+  }
+
   function render() {
     const s = app.state;
+    $('mission').textContent = s.map.name;
+    $('phaseName').textContent = phaseTitle();
+    $('phaseCard').className = s.result ? (s.result.winner === PLAYER_SIDE ? 'won' : 'lost') : '';
     $('active').textContent = activeText();
     renderPhases();
 
-    const list = $('units');
-    list.replaceChildren(...s.units.filter((u) => u.side === PLAYER_SIDE).map((u) => {
-      const b = document.createElement('button');
-      b.className = 'unit' + (u.id === app.selected ? ' selected' : '');
-      b.disabled = !canActivate(s, u) || !planning();
-      const status = u.status === 'ok' ? '' : ` ${u.status.toUpperCase()}`;
-      const men = u.kind === 'leader' ? '(squad leader)' : u.soldiers.join(' ');
-      const head = document.createElement('div');
-      head.textContent = `${u.team}  ${men}${status}${u.exposed ? ' exposed' : ''}${u.status === 'eliminated' ? ' (eliminated)' : ''}`;
-      const order = document.createElement('div');
-      order.className = 'order';
-      order.textContent = u.status === 'eliminated' ? '' : orderLine(u);
-      if (order.textContent.includes('NOT POSSIBLE')) order.classList.add('bad');
-      b.append(head, order);
-      b.onclick = () => select(u.id);
-      return b;
-    }));
+    $('units').replaceChildren(...s.units.filter((u) => u.side === PLAYER_SIDE).map((u) => unitCard(s, u)));
 
     const sel = app.selected !== null ? unit(app.selected) : null;
     $('hold').disabled = !planning() || !sel || orderIndex(sel.id) === -1;
     $('clear').disabled = !planning() || !app.plan.length;
     $('commit').disabled = !planning();
-    $('commit').textContent = firefight() ? 'COMMIT FIRE' : 'COMMIT MOVES';
-    $('view').classList.toggle('selected', app.view);
+    $('commit').textContent = s.result ? 'Mission over' : firefight() ? 'Commit fire' : 'Commit moves';
+    $('view').classList.toggle('on', app.view);
     const contacts = knownEnemies(s, PLAYER_SIDE);
     const sp = contacts.filter((c) => c.level === 'spotted').length;
     const m = s.map.mission;
-    $('turn').textContent = `${m ? `${s.map.name}. ` : ''}Turn ${s.turn}${m ? ` of ${m.turns}` : ''}. ${contacts.length ? `Contacts: ${sp} spotted, ${contacts.length - sp} suspected.` : 'No contact.'}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
+    const turn = $('turn');
+    turn.replaceChildren(document.createTextNode(`Turn ${s.turn}`));
+    if (m) turn.append(el('small', '', ` / ${m.turns}`));
+    $('contacts').textContent = (contacts.length ? `${sp} spotted · ${contacts.length - sp} suspected` : 'No contact') + (app.reveal ? ' · debug: all OPFOR shown' : '');
     $('preview').textContent = hint(sel);
     $('message').textContent = app.message;
     const log = $('log');
-    log.textContent = app.log.join('\n') || 'No orders carried out yet.';
+    log.replaceChildren(...app.log.map((entry) => {
+      const line = el('p', entry.kind === 'line' ? '' : entry.kind);
+      if (entry.kind === 'line') line.append(el('b', '', `T${entry.turn}`));
+      line.append(document.createTextNode(entry.text));
+      return line;
+    }));
     log.scrollTop = log.scrollHeight;
   }
 
@@ -384,14 +445,14 @@ export function startApp(initialState, { reveal = false } = {}) {
       marks.push(ring ? { hex: h, color: ring, width: 3, fill: COLORS.fireZone } : { hex: h, color: null, fill: COLORS.fireZone, inset: 0 });
     }
     for (const h of o.assault) marks.push({ hex: h, color: COLORS.assault, width: 4 });
-    if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
+    if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: COLORS.hover, width: 1.5, inset: 0.02 });
     if (app.view && app.selected !== null) {
       const from = projectedFor(app.selected).units[app.selected].pos;
       const k = `${app.selected}|${key(from)}`;
       if (app.viewCache?.k !== k) app.viewCache = { k, seen: new Set(visibleFrom(s.map, s.balance, from).map(key)) };
       for (let row = 0; row < s.map.height; row++) {
         for (let col = 0; col < s.map.width; col++) {
-          if (!app.viewCache.seen.has(`${col},${row}`)) marks.unshift({ hex: { col, row }, color: null, fill: 'rgba(0, 0, 0, 0.6)', inset: 0 });
+          if (!app.viewCache.seen.has(`${col},${row}`)) marks.unshift({ hex: { col, row }, color: null, fill: COLORS.shade, inset: 0 });
         }
       }
     }
@@ -527,8 +588,8 @@ export function startApp(initialState, { reveal = false } = {}) {
   $('view').onclick = toggleView;
 
   const brief = app.state.map.mission?.brief;
-  if (brief) app.log.push(`${app.state.map.name}. ${brief}`, '');
-  app.log.push('Turn 1.', `${phaseLabel(currentPhase(app.state).name)} phase (${app.state.activeSide}).`);
+  if (brief) app.log.push({ text: brief, kind: 'brief' });
+  app.log.push({ text: 'Turn 1.', kind: 'head' }, { text: `${phaseLabel(currentPhase(app.state).name)} phase (${app.state.activeSide}).`, kind: 'head' });
   render();
   renderHover();
   enemyTurn(0);

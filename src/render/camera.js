@@ -3,7 +3,7 @@
 
 export const MIN_SCALE = 10;
 export const MAX_SCALE = 140;
-const FIT_MARGIN = 0.95;
+const FIT_MARGIN = 0.985;
 
 export function createCamera() {
   return { x: 0, y: 0, scale: 30 };

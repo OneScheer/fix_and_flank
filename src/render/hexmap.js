@@ -4,18 +4,30 @@ import { toScreen } from './camera.js';
 import { SIDES, center, corners, neighbors } from '../sim/hex.js';
 import { inBounds, terrainName } from '../sim/map.js';
 
+const FONT = "'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif";
+
 export const COLORS = {
-  background: '#111410',
-  hexEdge: 'rgba(0, 0, 0, 0.35)',
+  // A printed map board: pale terrain, ink linework.
+  background: '#d9d5c4',
+  hexEdge: 'rgba(21, 24, 26, 0.22)',
   terrain: {
-    open: '#6b8a4a',
-    road: '#a39a84',
-    scrub: '#6f8540',
-    woods: '#2f4a2a',
-    rubble: '#7a746a',
-    building: '#6a5f55',
-    trench: '#7d6a48',
-    water: '#2f5470',
+    open: '#c4cb98',
+    road: '#d6cdb0',
+    scrub: '#a7b77c',
+    woods: '#7d9a62',
+    rubble: '#b9b1a1',
+    building: '#ada291',
+    trench: '#b8a173',
+    water: '#9fc2d4',
+  },
+  detail: {
+    woods: '#55733f',
+    scrub: '#6f8a4a',
+    rubble: '#6e665a',
+    building: '#6b6052',
+    buildingEdge: '#15181a',
+    trench: '#4a3a22',
+    road: '#a8996f',
   },
   // Counters and markers after the "Fireteam Counters" design: NATO frames,
   // ink outlines, amber suppressed and dark red pinned badges.
@@ -30,21 +42,24 @@ export const COLORS = {
   pinnedInk: '#ffffff',
   hatch: 'rgba(21, 24, 26, 0.28)',
   exposed: '#f6f4ee',
-  select: '#ffffff',
+  select: '#15181a',
+  selectHalo: '#f6f4ee',
   invalid: '#ff6a3d',
   fireInk: '#1f3f8f',
   hostileFireInk: '#8e1b12',
-  move: 'rgba(140, 230, 140, 0.9)',
-  fast: 'rgba(255, 190, 80, 0.9)',
+  move: '#2e7d32',
+  fast: '#c8650f',
+  hover: 'rgba(21, 24, 26, 0.55)',
+  shade: 'rgba(21, 24, 26, 0.42)',
+  suspect: '#8e1b12',
   fire: '#1f3f8f',
-  fireZone: 'rgba(31, 63, 143, 0.2)',
+  fireZone: 'rgba(31, 63, 143, 0.09)',
   assault: '#ff5a3d',
-  suspect: 'rgba(255, 190, 80, 0.9)',
-  plan: '#ffffff',
-  objective: '#f2d24b',
+  plan: '#15181a',
+  objective: '#8e1b12',
   hexside: {
-    wall: { color: '#c9c3b6', width: 0.13, dash: null, inset: 0 },
-    hedge: { color: '#24401f', width: 0.16, dash: [0.12, 0.08], inset: 0 },
+    wall: { color: '#5e574c', width: 0.13, dash: null, inset: 0 },
+    hedge: { color: '#36522a', width: 0.16, dash: [0.12, 0.08], inset: 0 },
     parapet: { color: '#4a3a22', width: 0.14, dash: null, inset: 0.12 },
   },
 };
@@ -93,18 +108,18 @@ function drawTerrainDetail(ctx, cam, h, terrain, map) {
     }
   };
   switch (terrain) {
-    case 'woods': scatter(9, s * 0.16, '#1f331c'); break;
-    case 'scrub': scatter(7, s * 0.07, '#8aa35a'); break;
-    case 'rubble': scatter(10, s * 0.05, '#4f4b45'); break;
+    case 'woods': scatter(9, s * 0.16, COLORS.detail.woods); break;
+    case 'scrub': scatter(7, s * 0.07, COLORS.detail.scrub); break;
+    case 'rubble': scatter(10, s * 0.05, COLORS.detail.rubble); break;
     case 'building':
-      ctx.fillStyle = '#3d3630';
+      ctx.fillStyle = COLORS.detail.building;
       ctx.fillRect(c.x - s * 0.45, c.y - s * 0.35, s * 0.9, s * 0.7);
-      ctx.strokeStyle = '#2a2420';
+      ctx.strokeStyle = COLORS.detail.buildingEdge;
       ctx.lineWidth = 2;
       ctx.strokeRect(c.x - s * 0.45, c.y - s * 0.35, s * 0.9, s * 0.7);
       break;
     case 'trench': {
-      ctx.strokeStyle = '#3a2e1c';
+      ctx.strokeStyle = COLORS.detail.trench;
       ctx.lineWidth = Math.max(2, s * 0.08);
       ctx.beginPath();
       for (let i = 0; i <= 6; i++) {
@@ -117,7 +132,7 @@ function drawTerrainDetail(ctx, cam, h, terrain, map) {
     }
     case 'road': {
       // Join the center to each neighboring road hex, so the road reads as one line.
-      ctx.strokeStyle = '#8c846f';
+      ctx.strokeStyle = COLORS.detail.road;
       ctx.lineWidth = s * 0.24;
       ctx.lineCap = 'round';
       for (const n of neighbors(h)) {
@@ -164,9 +179,10 @@ export function drawMap(ctx, cam, map, width, height, objective) {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = COLORS.objective;
-    ctx.font = `bold ${Math.round(cam.scale * 0.3)}px ui-monospace, monospace`;
+    ctx.font = `700 ${Math.round(cam.scale * 0.34)}px ${FONT}`;
     ctx.textAlign = 'center';
-    ctx.fillText('OBJ', c.x, c.y - cam.scale * 0.62);
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText('OBJ', c.x, c.y - cam.scale * 0.6);
   }
 }
 
@@ -201,13 +217,13 @@ export function drawSuspected(ctx, cam, hexes) {
     const c = toScreen(cam, center(h).x, center(h).y);
     const w = cam.scale * 0.9;
     const hh = w * 0.78;
-    ctx.strokeStyle = COLORS.opfor;
+    ctx.strokeStyle = COLORS.suspect;
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 4]);
     ctx.strokeRect(c.x - w / 2, c.y - hh / 2, w, hh);
     ctx.setLineDash([]);
-    ctx.fillStyle = COLORS.opfor;
-    ctx.font = `bold ${Math.round(cam.scale * 0.5)}px ui-monospace, monospace`;
+    ctx.fillStyle = COLORS.suspect;
+    ctx.font = `700 ${Math.round(cam.scale * 0.55)}px ${FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('?', c.x, c.y + 1);
@@ -243,8 +259,6 @@ export function drawPath(ctx, cam, from, path, color) {
   });
   ctx.stroke();
 }
-
-const FONT = "'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', sans-serif";
 
 // Fire marker: crosshair (ring, four ticks, center dot) of radius r at (x, y).
 function crosshair(ctx, x, y, r, color, width) {
@@ -430,10 +444,10 @@ export function drawCounters(ctx, cam, units, roster) {
   for (const { unit, pos, selected, stackedWithTeam, ghost } of units) {
     if (unit.status === 'eliminated') continue;
     const leader = unit.kind === 'leader';
-    const size = cam.scale * (leader ? 0.55 : 0.92);
+    const size = cam.scale * (leader ? 0.64 : 1.06);
     // Sharing a hex with a team, the SL sits at its lower left, clear of the team's badges and pips.
     const stacked = leader && stackedWithTeam;
-    const c = toScreen(cam, pos.x - (stacked ? 0.62 : 0), pos.y + (stacked ? 0.6 : 0));
+    const c = toScreen(cam, pos.x - (stacked ? 0.55 : 0), pos.y + (stacked ? 0.62 : 0));
     const w = size;
     const h = size / 1.5;
     const x0 = c.x - w / 2 - (leader ? 0 : size * 0.1);
@@ -442,10 +456,15 @@ export function drawCounters(ctx, cam, units, roster) {
 
     ctx.globalAlpha = ghost ? 0.3 : unit.activated ? 0.55 : 1;
     if (selected) {
-      frame(ctx, unit.side, x0, y0, w, h);
+      const pad = size * 0.09;
+      frame(ctx, unit.side, x0 - pad, y0 - pad, w + pad * 2, h + pad * 2);
+      ctx.fillStyle = COLORS.selectHalo;
+      ctx.fill();
       ctx.strokeStyle = COLORS.select;
-      ctx.lineWidth = lw + Math.max(3, size * 0.1);
+      ctx.lineWidth = Math.max(2, size * 0.05);
+      ctx.setLineDash([size * 0.12, size * 0.07]);
       ctx.stroke();
+      ctx.setLineDash([]);
     }
     frame(ctx, unit.side, x0, y0, w, h);
     ctx.fillStyle = unit.side === 'OPFOR' ? COLORS.opfor : COLORS.blufor;
