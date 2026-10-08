@@ -22,7 +22,7 @@ async function main() {
     loadJson(`data/maps/${encodeURIComponent(mapName)}.json`),
   ]);
   const state = createState({ balance, map: parseMap(mapJson, balance), seed });
-  window.app = startApp(state); // exposed for debugging in the console
+  window.app = startApp(state, { reveal: params.get('reveal') === '1' }); // exposed for debugging in the console
 }
 
 main().catch((err) => {

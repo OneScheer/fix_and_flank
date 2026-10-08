@@ -183,6 +183,25 @@ function drawHexsides(ctx, cam, map) {
   ctx.setLineDash([]);
 }
 
+// Suspected contacts: a dashed red outline with a question mark, at hex centers.
+export function drawSuspected(ctx, cam, hexes) {
+  for (const h of hexes) {
+    const c = toScreen(cam, center(h).x, center(h).y);
+    const w = cam.scale * 0.9;
+    const hh = w * 0.78;
+    ctx.strokeStyle = COLORS.opfor;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(c.x - w / 2, c.y - hh / 2, w, hh);
+    ctx.setLineDash([]);
+    ctx.fillStyle = COLORS.opfor;
+    ctx.font = `bold ${Math.round(cam.scale * 0.5)}px ui-monospace, monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('?', c.x, c.y + 1);
+  }
+}
+
 // Hex outlines: [{ hex, color, width, dashed, fill }]
 export function drawHexMarks(ctx, cam, marks) {
   for (const m of marks) {
@@ -191,6 +210,7 @@ export function drawHexMarks(ctx, cam, marks) {
       ctx.fillStyle = m.fill;
       ctx.fill();
     }
+    if (!m.color) continue;
     ctx.strokeStyle = m.color;
     ctx.lineWidth = m.width ?? 2;
     ctx.setLineDash(m.dashed ? [5, 4] : []);
@@ -232,7 +252,7 @@ function badge(ctx, x, y, r, fill, text) {
 // The SL: smaller, with the headquarters staff line, drawn at the hex's
 // upper right when it shares the hex with a team.
 export function drawCounters(ctx, cam, units, roster) {
-  for (const { unit, pos, selected, stackedWithTeam } of units) {
+  for (const { unit, pos, selected, stackedWithTeam, ghost } of units) {
     if (unit.status === 'eliminated') continue;
     const leader = unit.kind === 'leader';
     const size = cam.scale * (leader ? 0.62 : 1.0);
@@ -243,7 +263,7 @@ export function drawCounters(ctx, cam, units, roster) {
     const x0 = c.x - w / 2;
     const y0 = c.y - h / 2;
 
-    ctx.globalAlpha = unit.activated ? 0.55 : 1;
+    ctx.globalAlpha = ghost ? 0.3 : unit.activated ? 0.55 : 1;
     ctx.fillStyle = unit.side === 'OPFOR' ? COLORS.opfor : COLORS.blufor;
     ctx.fillRect(x0, y0, w, h);
     ctx.strokeStyle = selected ? COLORS.select : COLORS.counterEdge;

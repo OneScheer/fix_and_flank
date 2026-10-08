@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { chooseOrders } from '../src/ai/basic.js';
 import { applyAction } from '../src/sim/actions.js';
 import { createRng } from '../src/sim/rng.js';
-import { eventText, previewAction } from '../src/ui/describe.js';
+import { eventText, passText, previewAction } from '../src/ui/describe.js';
 import { H, makeState, open, unit } from './helpers.js';
 
 function squad() {
@@ -32,4 +32,25 @@ test('log lines report the dice', () => {
 
 test('the placeholder OPFOR gives no orders: all its units hold', () => {
   assert.deepEqual(chooseOrders(squad(), 'OPFOR'), []);
+});
+
+test('the log only tells BLUFOR what it knows', () => {
+  // OPFOR in a trench, unseen: its hold and its moves stay out of BLUFOR's log.
+  let s = makeState(['...nn..', '.......', '.......', '.......', '.......'], [
+    unit('BLUFOR', 'ALPHA', 3, 4), unit('OPFOR', 'ALPHA', 3, 0),
+  ]);
+  s = applyAction(s, { type: 'pass', unit: 0 }, createRng(1)).state;
+  const r = applyAction(s, { type: 'move', unit: 1, to: H(4, 0) }, createRng(1));
+  for (const e of r.events) {
+    const line = eventText(r.state, e, 'BLUFOR') ?? '';
+    assert.ok(!/OPFOR ALPHA moves/.test(line), line);
+  }
+  assert.equal(passText(s, { type: 'activated', action: 'pass', unit: 1 }, 'BLUFOR'), null);
+});
+
+test('the move preview warns when the destination is in view of a known enemy', () => {
+  const s = makeState(open(8, 6), [unit('BLUFOR', 'ALPHA', 3, 5), unit('OPFOR', 'ALPHA', 3, 0)]);
+  assert.match(previewAction(s, { type: 'move', unit: 0, to: H(3, 4) }), /Ends in view of enemy at 3,0: will be seen/);
+  const hidden = makeState(['........', '........', '........', '...:....', '........', '........'], [unit('BLUFOR', 'ALPHA', 3, 4), unit('OPFOR', 'ALPHA', 3, 0)]);
+  assert.match(previewAction(hidden, { type: 'move', unit: 0, to: H(3, 3) }), /concealed: seen only if one is adjacent/);
 });

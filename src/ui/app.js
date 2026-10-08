@@ -4,13 +4,15 @@
 
 import { moveOptions, rallyTargets } from '../sim/actions.js';
 import { center, hexAt, key, mapBounds, same } from '../sim/hex.js';
+import { visibleFrom } from '../sim/los.js';
 import { inBounds, terrainName, terrainOf } from '../sim/map.js';
 import { checkPlan, commitOrders, projectOrders } from '../sim/orders.js';
 import { createRng } from '../sim/rng.js';
+import { knownEnemies } from '../sim/spotting.js';
 import { canActivate, unitsAt } from '../sim/state.js';
 import { chooseOrders } from '../ai/basic.js';
 import { createCamera, fitCamera, panBy, toWorld, zoomAt } from '../render/camera.js';
-import { COLORS, drawCounters, drawHexMarks, drawMap, drawPath, fitCanvas } from '../render/hexmap.js';
+import { COLORS, drawCounters, drawHexMarks, drawMap, drawPath, drawSuspected, fitCanvas } from '../render/hexmap.js';
 import { positionAlong } from './anim.js';
 import { eventText, passText, previewAction } from './describe.js';
 
@@ -23,8 +25,11 @@ const MAX_LOG = 200;
 
 const $ = (id) => document.getElementById(id);
 
-export function startApp(initialState) {
+export function startApp(initialState, { reveal = false } = {}) {
   const app = {
+    reveal,            // debug: draw unseen OPFOR faintly (?reveal=1)
+    view: false,       // shade hexes the selected unit cannot see (V)
+    viewCache: null,
     state: initialState,
     cam: createCamera(),
     selected: null,
@@ -47,6 +52,8 @@ export function startApp(initialState) {
   const planning = () => app.state.activeSide === PLAYER_SIDE && !app.aiPending && !app.anim.length;
   const myUnits = () => app.state.units.filter((u) => u.side === PLAYER_SIDE && canActivate(app.state, u));
   const orderIndex = (id) => app.plan.findIndex((a) => a.unit === id);
+  const spotted = (u) => app.state.contacts[PLAYER_SIDE]?.[u.id]?.level === 'spotted';
+  const shown = (u) => u.side === PLAYER_SIDE || spotted(u);
 
   // The state a unit's order is planned against: the orders before it applied.
   function projectedFor(id) {
@@ -130,7 +137,7 @@ export function startApp(initialState) {
     const before = app.state;
     const r = commitOrders(before, actions, createRng(before.rngState));
     for (const e of r.events) {
-      const line = passText(before, e) ?? eventText(r.state, e);
+      const line = passText(before, e, PLAYER_SIDE) ?? eventText(r.state, e, PLAYER_SIDE);
       if (!line) continue;
       const turnLine = e.type === 'turn_end' || e.type === 'turn_start' || e.type === 'side_start';
       app.log.push(turnLine ? line : `T${e.type === 'recover' ? r.state.turn : before.turn}  ${line}`);
@@ -183,6 +190,11 @@ export function startApp(initialState) {
     }, AI_DELAY_MS + delay);
   }
 
+  function toggleView() {
+    app.view = !app.view;
+    render();
+  }
+
   function nextUnit() {
     const ready = myUnits();
     if (!ready.length) return;
@@ -201,7 +213,6 @@ export function startApp(initialState) {
 
   function render() {
     const s = app.state;
-    $('turn').textContent = `Turn ${s.turn}`;
     const ordered = app.plan.length;
     const total = myUnits().length;
     $('active').textContent = !planning()
@@ -235,6 +246,10 @@ export function startApp(initialState) {
     $('hold').disabled = !planning() || !sel || orderIndex(sel.id) === -1;
     $('clear').disabled = !planning() || !app.plan.length;
     $('commit').disabled = !planning();
+    $('view').classList.toggle('selected', app.view);
+    const contacts = knownEnemies(s, PLAYER_SIDE);
+    const sp = contacts.filter((c) => c.level === 'spotted').length;
+    $('turn').textContent = `Turn ${s.turn}. ${contacts.length ? `Contacts: ${sp} spotted, ${contacts.length - sp} suspected.` : 'No contact.'}${app.reveal ? ' DEBUG: showing all OPFOR.' : ''}`;
     $('preview').textContent = sel ? hint(sel) : '';
     $('message').textContent = app.message;
     const log = $('log');
@@ -267,7 +282,9 @@ export function startApp(initialState) {
     if (sides.length) {
       parts.push(sides.map(([side, f]) => `${f} on ${side} side (casualties on ${app.state.balance.hexsides[f].casualtyOn}+ from that side)`).join(', '));
     }
-    const here = unitsAt(app.state, h).map((u) => `${u.side} ${u.team} ${u.soldiers.length} men ${u.status}${u.moved ? ', moved (cannot fire this turn)' : ''}`);
+    const here = unitsAt(app.state, h).filter(shown).map((u) => `${u.side} ${u.team} ${u.soldiers.length} men ${u.status}${u.moved ? ', moved (cannot fire this turn)' : ''}`);
+    const suspect = knownEnemies(app.state, PLAYER_SIDE).find((c) => c.level === 'suspected' && same(c.pos, h));
+    if (suspect) here.push('suspected enemy (last known position)');
     $('status').textContent = parts.join(', ') + (here.length ? ` | ${here.join('; ')}` : '');
   }
 
@@ -302,7 +319,18 @@ export function startApp(initialState) {
     if (app.mode === 'fast') for (const path of o.fast.values()) marks.push({ hex: path[path.length - 1], color: COLORS.fast });
     if (app.mode === 'rally') for (const t of o.rally) marks.push({ hex: t.pos, color: COLORS.rally, width: 3 });
     if (app.hover && inBounds(s.map, app.hover)) marks.push({ hex: app.hover, color: 'rgba(255, 255, 255, 0.6)', width: 1, inset: 0.02 });
+    if (app.view && app.selected !== null) {
+      const from = projectedFor(app.selected).units[app.selected].pos;
+      const k = `${app.selected}|${key(from)}`;
+      if (app.viewCache?.k !== k) app.viewCache = { k, seen: new Set(visibleFrom(s.map, s.balance, from).map(key)) };
+      for (let row = 0; row < s.map.height; row++) {
+        for (let col = 0; col < s.map.width; col++) {
+          if (!app.viewCache.seen.has(`${col},${row}`)) marks.unshift({ hex: { col, row }, color: null, fill: 'rgba(0, 0, 0, 0.6)', inset: 0 });
+        }
+      }
+    }
     drawHexMarks(ctx, app.cam, marks);
+    drawSuspected(ctx, app.cam, knownEnemies(s, PLAYER_SIDE).filter((c) => c.level === 'suspected').map((c) => c.pos));
 
     // Every planned order: a line from where the unit will be when it runs.
     if (planning()) {
@@ -319,8 +347,9 @@ export function startApp(initialState) {
     const animating = app.anim.length;
     app.anim = app.anim.filter((a) => (now - a.start) / MOVE_ANIM_MS < a.points.length - 1);
     if (animating && !app.anim.length) render(); // the panel waits for moves to finish
-    const counters = s.units.map((u) => ({
+    const counters = s.units.filter((u) => shown(u) || app.reveal).map((u) => ({
       unit: u,
+      ghost: !shown(u),
       pos: positionOf(u, now),
       selected: u.id === app.selected && planning(),
       stackedWithTeam: u.kind === 'leader' && unitsAt(s, u.pos).some((x) => x.kind === 'team'),
@@ -401,6 +430,7 @@ export function startApp(initialState) {
     else if (k === 'r') setMode('fast');
     else if (k === 'l') setMode('rally');
     else if (k === 'h' || k === 'backspace' || k === 'delete') holdSelected();
+    else if (k === 'v') toggleView();
     else if (k === 'home' || k === '0') fit();
   });
 
@@ -410,6 +440,7 @@ export function startApp(initialState) {
   $('hold').onclick = holdSelected;
   $('clear').onclick = clearAll;
   $('commit').onclick = commit;
+  $('view').onclick = toggleView;
 
   app.log.push(`Turn 1. ${app.state.activeSide} has the initiative.`);
   selectFirst();
