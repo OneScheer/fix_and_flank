@@ -18,7 +18,7 @@ import { updateContacts } from './spotting.js';
 //     activated,          has acted in the current phase
 //     moved,              moved or fast moved: cannot fire until its side's next turn
 //     exposed,            fast moved; until its side's next turn starts
-//     fired,              fired (gives it away until its side's next turn; set by fire, milestone 4)
+//     fired,              fired (gives it away until its side's next turn)
 //     reload,             side's turns until it can fire again (a type with fireEveryTurns, the HMG)
 //   }],
 //   contacts: { [side]: { [enemyId]: { level: 'spotted' | 'suspected', pos, turn } } }

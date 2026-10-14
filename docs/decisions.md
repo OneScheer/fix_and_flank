@@ -240,3 +240,9 @@ Answers to the follow-up questions:
 - **AI:** the ENGAGED mode compares the best single target with the best pair (both orders), scoring each half as expected casualties + `pinWeight` x pin chance + `suppressWeight` (2) x chance to suppress (half for a target already suppressed). Switch: `ai.splitFire`.
 - **Balance:** unchanged on mission 1 (frontal 0.0%, fix and flank 74.5%): there the flanking team stays hidden until it is next to the trench, and then the trench may not split. It will matter on missions where two BLUFOR elements are seen at once from a distance.
 - The playback shows a split as two shots in a row, each with its own dice and bangs; the log has a line for each.
+
+## Handoff (2026-10-14)
+
+- The after-action replay (old milestone 8) is dropped at the user's request; the dice tray and the log show every roll. `CLAUDE.md` updated.
+- `README.md` written for the agent taking over: what the game is, goals, status, how to run and test, layout, balance, and the list of known issues and fixes needed (found in an audit the same day).
+- Dead code removed: `fireAtSpotted` in `src/ai/drills.js` (unused since the frontal plan stopped firing).

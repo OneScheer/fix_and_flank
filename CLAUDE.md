@@ -1,5 +1,7 @@
 # CLAUDE.md: Fix and Flank
 
+Start with `README.md`: current state, how to run and test, and the list of known issues and fixes to make.
+
 A turn-based hex wargame of small unit infantry tactics for the browser. Modern setting, dismounted infantry, squad scale. The core loop is **fix and flank**: pin the enemy with a base of fire, maneuver a second element close, then finish them with an assault. A frontal assault on a dug-in enemy should usually fail.
 
 The game is for a community of Arma Reforger players. It should feel familiar to them (terminology, tactics) and ideally double as a place to rehearse squad drills.
@@ -51,7 +53,7 @@ The simulation must be completely separate from rendering and UI.
     rng.js          seeded RNG (mulberry32)
   /ai         enemy behavior (basic.js), scripted BLUFOR plans (drills.js)
   /render     canvas drawing only
-  /ui         input, action planning, odds preview, AAR replay
+  /ui         input, action planning, odds preview, step-by-step playback with the dice tray
 /data
   balance.json      all tunable numbers (terrain table, dice modifiers)
   /maps             one JSON per mission
@@ -61,7 +63,7 @@ The simulation must be completely separate from rendering and UI.
 Rules for the simulation:
 
 - **Deterministic.** Same state + same actions + same seed = same result, always. Tests depend on this.
-- `applyAction(state, action, rng)` resolves one unit's order and `commitOrders(state, actions, rng)` a whole side's; both return the new state and a list of **events** (activated, moved, fired, dice rolled, suppressed, casualty, spotted, assault, turn ended). The renderer, the log and the after-action replay all consume the events. Never let rendering logic decide outcomes.
+- `applyAction(state, action, rng)` resolves one unit's order and `commitOrders(state, actions, rng)` a whole side's; both return the new state and a list of **events** (activated, moved, fired, dice rolled, suppressed, casualty, spotted, assault, turn ended). `commitOrders` also takes an optional `onStep(state, events)` callback, which the UI uses to play a commit back one order at a time. The renderer, the log and the dice tray all consume the events. Never let rendering logic decide outcomes.
 - **No magic numbers in code.** Every tunable lives in `data/balance.json`.
 
 ---
@@ -124,7 +126,7 @@ Each turn runs four phases, in the order set in `balance.json` (`turn.phases`), 
 - Each hit gets a casualty roll against the target's directional cover (for example 4+ in the open, 5+ in a trench seen from the flank, 6 behind its parapet). Each success removes a soldier (rifleman first, AR last).
 - Fire hits the fireteam in the hex; the SL only when he is alone there. Suppressive fire on a hex with an unseen enemy can still hit it; the shooter sees the dice but not the effect.
 - **Split fire (OPFOR only):** an OPFOR team with no enemy next to it may divide its dice between two hexes (the larger half first), each half rolled at its own target number.
-- **Units that moved this turn cannot fire.** Suppressed units fire at worse odds. Pinned units cannot fire. A spotted enemy in the next hex cannot be fired on: that is an assault (milestone 5).
+- **Units that moved this turn cannot fire.** Suppressed units fire at worse odds. Pinned units cannot fire. Firing on a spotted enemy in the next hex is an assault (below), not fire.
 - A unit that fires is spotted by every enemy with line of sight until its side's next turn starts.
 
 ### Assault
@@ -158,22 +160,22 @@ Before committing, the UI tells the player what will happen, for example:
 
 A map may carry a `mission` (attacker, defender, turn limit, brief), an `objective` hex and `drills` (scripted plans for the balance test). The attacker wins by holding the objective with a fireteam at the end of a turn, or by eliminating every defending fireteam; the defender wins by eliminating every attacking fireteam, or when the last turn ends. Mission 1 is `data/maps/trenchline.json` (the default); `?map=training` loads the sandbox map, which never ends.
 
-### After-action replay
+### Dice on screen
 
-Every action can be replayed with its dice and an explanation (target number and modifiers, which dice hit, casualty rolls). This is what makes the game useful for drill practice.
+When orders are committed they play back one at a time: each roll tumbles in a dice tray over the map and settles on the real dice (hits highlighted, with the target number and the outcome), fire puts bang markers on the hex fired on, and only then does the result show on the map, the roster and the log. Every roll and its reasons are also in the log. (A full after-action replay was planned and dropped on 2026-10-14 at the user's request.)
 
 ---
 
 ## 6. Enemy AI
 
-Scripted behavior per enemy fireteam, using the **same visibility and rules as the player**, no cheating.
+Scripted behavior per enemy fireteam, using the **same visibility and rules as the player**, no cheating. One deliberate exception, at the user's request: only OPFOR may split its fire.
 
 Each enemy unit picks one mode per enemy action phase (`src/ai/basic.js`, numbers in `balance.ai`), first that applies:
 
 - `SUPPRESSED`: suppressed or pinned, it spends the phase recovering.
 - `COUNTER_FLANK`: assault a spotted team in the next hex when the odds to take it are good; or, sometimes (a chance per phase), move against a weakened team close by (suppressed, pinned or fewer men) and assault it when next to it.
 - `RETREAT`: down to its last man, move away from known enemies.
-- `ENGAGED`: aimed fire on the best spotted target within its open-fire range (expected casualties plus a weight for the chance to pin).
+- `ENGAGED`: aimed fire on the best spotted target within its open-fire range, or at any range on a team that has fired at it (return fire). Scored by expected casualties plus weights for the chance to pin and to suppress; with no enemy next to it, it may split its fire between the best two targets (OPFOR only, see Fire).
 - `REPOSITION`: in poor cover against the nearest known enemy, move to a next hex with good cover that is not next to an enemy.
 - `HOLD`: stay put and hold fire; firing would give it away.
 
@@ -192,7 +194,7 @@ Work one milestone at a time. Do not start the next until the current one passes
 5. **Assault and the odds preview.** *Accept:* preview odds equal the exact odds the sim rolls against.
 6. **Enemy AI.** *Accept:* AI fires from its positions, waits when pinned, and sometimes counterattacks.
 7. **First mission and balance test.** BLUFOR squad vs. dug-in OPFOR. *Accept (automated):* over 200 seeded runs, a scripted frontal assault wins under 25 percent and a scripted fix-and-flank plan wins over 70 percent. Adjust `balance.json` until this holds.
-8. **After-action replay** with dice and explanations.
+8. ~~After-action replay~~: dropped on 2026-10-14 at the user's request. The dice tray and the log cover seeing the rolls.
 9. **Content.** More missions, terrain, difficulty levels. Only after the core loop is proven fun.
 
 Later, out of scope for now: vehicles, drones, indirect fire, multiple squads, campaign, multiplayer.

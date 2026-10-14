@@ -97,12 +97,6 @@ export function frontalAssault(drills) {
   };
 }
 
-function fireAtSpotted(s, u) {
-  const c = Object.entries(s.contacts.BLUFOR).find(([, k]) => k.level === 'spotted'
-    && validateAction(s, { type: 'fire', unit: u.id, target: k.pos }).ok);
-  return c ? { type: 'fire', unit: u.id, target: c[1].pos } : null;
-}
-
 // Fix and flank: the base of fire goes to its position and fires on the
 // objective every firefight (suppressive fire until the enemy is seen). The
 // maneuver element goes round the flank by the concealed route without
